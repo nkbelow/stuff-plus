@@ -11,6 +11,14 @@ The manifest is just a DuckDB view over all `_meta.json` files (see `manifest`).
 
 Re-runs are idempotent: complete partitions are skipped unless `force=True`, and
 gzip is written with mtime=0 so identical responses produce identical files.
+
+Failure semantics:
+
+  - A failed fetch is recorded per date by `backfill`, which carries on (see savant.py
+    for which failures retry).
+  - Writes are atomic; a crash leaves the date incomplete, to be fetched again.
+  - `read_header` raises ValueError for a file with no header line, and OSError or
+    EOFError for an unreadable gzip.
 """
 
 import csv
@@ -25,7 +33,7 @@ from typing import Any
 
 import duckdb
 
-from stuffplus.fs import atomic_path
+from stuffplus.fs import atomic_path, hive_seasons
 from stuffplus.ingest.savant import FETCHER_VERSION, FetchResult, SavantClient, SavantError
 
 DATA_FILE = "part.csv.gz"
@@ -80,12 +88,15 @@ def complete_partitions(bronze_dir: Path, season: int) -> list[Partition]:
 def read_header(data_file: Path) -> tuple[str, ...]:
     """A bronze file's column names, in order. Savant prefixes a UTF-8 BOM."""
     with gzip.open(data_file, "rt", encoding="utf-8-sig", newline="") as f:
-        return tuple(next(csv.reader(f), []))
+        header = tuple(next(csv.reader(f), []))
+    if not header:
+        raise ValueError(f"{data_file}: no header line")
+    return header
 
 
 def seasons(bronze_dir: Path) -> list[int]:
     """Seasons with at least one bronze partition directory."""
-    return sorted(int(p.name.removeprefix("season=")) for p in bronze_dir.glob("season=*"))
+    return hive_seasons(bronze_dir)
 
 
 def _atomic_write(path: Path, data: bytes) -> None:

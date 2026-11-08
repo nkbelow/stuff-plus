@@ -13,8 +13,7 @@ from stuffplus.silver.build import (
     build_seasons,
 )
 from stuffplus.silver.contract import SILVER_COLUMNS
-from stuffplus.silver.layout import SilverLayout
-from stuffplus.silver.quality import has_hard_failure
+from stuffplus.silver.layout import Report, SilverLayout
 from tests.conftest import GAME_DATE, SILVER_FIXTURE_HEADER, silver_pitch, write_bronze
 
 NEXT_DAY = GAME_DATE + dt.timedelta(days=1)
@@ -54,7 +53,7 @@ def test_build_sorts_and_attaches_lineage(cfg):
     result = build_season(cfg, 2024)
 
     assert result.rows == 3
-    assert not has_hard_failure(result.results)
+    assert not any(r.blocks for r in result.results)
     rows = duckdb.execute(
         f"SELECT pitch_id, bronze_fetched_at FROM read_parquet('{published(cfg)}')"
     ).fetchall()
@@ -102,7 +101,7 @@ def test_conflicting_duplicate_blocks_publish_and_keeps_previous_season(cfg):
         build_season(cfg, 2024)
 
     assert content_hash(published(cfg)) == before
-    results_file = SilverLayout(cfg.silver_dir).dq_results(2024)
+    results_file = SilverLayout(cfg.silver_dir).dq(Report.RESULTS, 2024)
     failed = duckdb.execute(
         f"SELECT check_name FROM read_parquet('{results_file}') "
         "WHERE NOT passed AND severity = 'hard'"

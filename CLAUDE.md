@@ -62,7 +62,8 @@ each commit references its ticket (`Closes #N`), which is how `/code-review` fin
   2022, STL Jun 2023, HOU Jul 2024, TEX and DET 2025): 2–10 games a season, listed in
   `silver.dq_games`. Dropping them later removes specific park-days, not random pitches.
 - `description`/`type` disagree on catcher interference (excused, 6–13 a season) and on
-  about one batter-interference play a season (`type = X`, warned, not excused).
+  0–2 plays a season scored in play (`type = X`, `events = field_out`) with a pitch-call
+  description, mostly batter interference. Those warn; they are not excused.
 - `api_break_*` are feet, like `pfx_*`. Bat tracking starts 2023-07-14. `hyper_speed` is an
   outcome (adjusted exit velocity); `miss_distance` is bat tracking.
 - 2026 brought one new `description`, `swinging_pitchout`; a new value blocks publishing

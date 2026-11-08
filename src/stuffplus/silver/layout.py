@@ -10,10 +10,21 @@ Pass `season="*"` to get a glob over every season.
 """
 
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
+from stuffplus.fs import hive_seasons
+
 Season = int | Literal["*"]
+
+
+class Report(StrEnum):
+    """The data quality outputs each audit writes, one file per season."""
+
+    RESULTS = "dq_results"
+    NULL_RATES = "dq_null_rates"
+    GAMES = "dq_games"
 
 
 @dataclass(frozen=True)
@@ -26,8 +37,8 @@ class SilverLayout:
     def staging(self, season: Season) -> Path:
         return self.root / "_staging" / "pitches" / f"season={season}" / "part.parquet"
 
-    def dq(self, report: str, season: Season) -> Path:
+    def dq(self, report: Report, season: Season) -> Path:
         return self.root / "dq" / report / f"season={season}" / "part.parquet"
 
-    def dq_results(self, season: Season) -> Path:
-        return self.dq("dq_results", season)
+    def published_seasons(self) -> list[int]:
+        return [s for s in hive_seasons(self.root / "pitches") if self.pitches(s).exists()]

@@ -19,8 +19,8 @@ from stuffplus.config import DEFAULT_DATA_CONFIG, date_range, load_data_config
 from stuffplus.ingest.bronze import backfill as run_backfill
 from stuffplus.ingest.bronze import season_summary, seasons
 from stuffplus.ingest.savant import SavantClient
-from stuffplus.silver.build import audit_seasons, build_seasons, published_seasons
-from stuffplus.silver.quality import format_report, has_hard_failure
+from stuffplus.silver.build import audit_seasons, build_seasons
+from stuffplus.silver.quality import format_report
 
 app = typer.Typer(no_args_is_help=True)
 ingest_app = typer.Typer(no_args_is_help=True, help="Bronze-layer Statcast ingestion.")
@@ -118,12 +118,11 @@ def dq(
 ) -> None:
     """Re-audit published silver seasons and print the data quality report."""
     cfg = load_data_config(config)
-    summary = audit_seasons(cfg, season or published_seasons(cfg))
+    summary = audit_seasons(cfg, season or None)
     for audited_season, results in summary.audited.items():
         typer.echo(format_report(audited_season, results))
-    failed = [s for s, results in summary.audited.items() if has_hard_failure(results)]
-    if failed or summary.failed:
-        typer.echo(f"Hard failures in: {sorted([*failed, *summary.failed])}", err=True)
+    if summary.blocked:
+        typer.echo(f"Hard failures or audit errors in: {summary.blocked}", err=True)
         raise typer.Exit(code=1)
 
 

@@ -7,10 +7,12 @@ reconcile silver against an independent count.
 
 Failure semantics:
 
-  - An unreadable bronze file (bad gzip, no header line) raises OSError or EOFError from
-    `BronzeSeason.load`, or duckdb.Error from the queries.
+  - `BronzeSeason.load` raises ValueError for a bronze file with no header line, and
+    OSError or EOFError for an unreadable gzip. The queries raise duckdb.Error.
 """
 
+import datetime as dt
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,6 +47,17 @@ class BronzeSeason:
     def columns(self) -> set[str]:
         """Every column present in at least one of the season's files."""
         return {name for header in self.headers.values() for name in header}
+
+    def missing(self, columns: Iterable[str]) -> dict[str, list[dt.date]]:
+        """Each of `columns` absent from some file -> the partition dates it is absent on."""
+        columns = list(columns)  # walked once per partition
+        missing: dict[str, list[dt.date]] = {}
+        for p in self.partitions:
+            header = set(self.headers[p.data_file])
+            for column in columns:
+                if column not in header:
+                    missing.setdefault(column, []).append(p.game_date)
+        return missing
 
     @property
     def rows(self) -> int:

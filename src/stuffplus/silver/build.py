@@ -12,7 +12,8 @@ reports without touching the data. File locations are defined once, in `layout.p
 
 Failure semantics:
 
-  - No complete, non-empty bronze partitions for the season -> SilverBuildError.
+  - No complete, non-empty bronze partitions for the season, or an unreadable bronze
+    file -> SilverBuildError.
   - A value that won't cast to its contract type -> SilverBuildError naming the season,
     column, value and partition date. Integers are strict too: DuckDB's own cast would
     round "1.5" to 2.
@@ -21,7 +22,6 @@ Failure semantics:
   - `build_seasons` and `audit_seasons` record each season's SilverBuildError and carry on.
 """
 
-import glob
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,7 +40,6 @@ from stuffplus.silver.layout import SilverLayout
 from stuffplus.silver.quality import (
     AuditContext,
     CheckResult,
-    Severity,
     run_audit,
     write_audit,
 )
@@ -72,7 +71,7 @@ class BuildResult:
 
     @property
     def warnings(self) -> int:
-        return sum(r.severity is Severity.WARN and not r.passed for r in self.results)
+        return sum(r.warns for r in self.results)
 
 
 @dataclass
@@ -84,7 +83,13 @@ class BuildSummary:
 @dataclass
 class AuditSummary:
     audited: dict[int, list[CheckResult]] = field(default_factory=dict)
-    failed: dict[int, str] = field(default_factory=dict)
+    failed: dict[int, str] = field(default_factory=dict)  # season -> why it couldn't run
+
+    @property
+    def blocked(self) -> list[int]:
+        """Seasons with a hard failure, or whose audit couldn't run."""
+        hard = [s for s, results in self.audited.items() if any(r.blocks for r in results)]
+        return sorted([*hard, *self.failed])
 
 
 def build_season(cfg: DataConfig, season: int) -> BuildResult:
@@ -104,7 +109,7 @@ def build_season(cfg: DataConfig, season: int) -> BuildResult:
             raise SilverBuildError(f"season {season}: {exc}") from exc
 
         results = _audit(con, cfg, bronze, staged_path)
-        failed = [r for r in results if r.severity is Severity.HARD and not r.passed]
+        failed = [r for r in results if r.blocks]
         if failed:
             raise SilverAuditError(season, failed)
 
@@ -143,9 +148,12 @@ def build_seasons(cfg: DataConfig, seasons: Iterable[int]) -> BuildSummary:
     return summary
 
 
-def audit_seasons(cfg: DataConfig, seasons: Iterable[int]) -> AuditSummary:
-    """Re-audit each published season in turn. One season failing doesn't stop the rest."""
+def audit_seasons(cfg: DataConfig, seasons: Iterable[int] | None = None) -> AuditSummary:
+    """Re-audit each season in turn (default: every published one). One season failing
+    doesn't stop the rest."""
     summary = AuditSummary()
+    if seasons is None:
+        seasons = SilverLayout(cfg.silver_dir).published_seasons()
     for season in seasons:
         try:
             summary.audited[season] = audit_season(cfg, season)
@@ -153,12 +161,6 @@ def audit_seasons(cfg: DataConfig, seasons: Iterable[int]) -> AuditSummary:
             print(f"[error] {exc}")
             summary.failed[season] = str(exc)
     return summary
-
-
-def published_seasons(cfg: DataConfig) -> list[int]:
-    pattern = SilverLayout(cfg.silver_dir).pitches("*")
-    files = glob.glob(str(pattern))
-    return sorted(int(Path(f).parent.name.removeprefix("season=")) for f in files)
 
 
 def render_sql(bronze: BronzeSeason) -> str:
@@ -202,7 +204,10 @@ def _cast(column: Column, present: bool) -> str:
 
 
 def _load_bronze(cfg: DataConfig, season: int) -> BronzeSeason:
-    bronze = BronzeSeason.load(cfg.bronze_dir, season)
+    try:
+        bronze = BronzeSeason.load(cfg.bronze_dir, season)
+    except (OSError, EOFError, ValueError) as exc:
+        raise SilverBuildError(f"season {season}: unreadable bronze file: {exc}") from exc
     if not bronze.partitions:
         raise SilverBuildError(f"season {season}: no complete bronze partitions with rows")
     return bronze

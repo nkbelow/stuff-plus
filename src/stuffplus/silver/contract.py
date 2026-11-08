@@ -15,10 +15,6 @@ partition path. Types and first populated seasons were confirmed against 2022–
 from dataclasses import dataclass
 from enum import StrEnum
 
-# The first season this project ingests; a column with this first_season is expected to
-# be populated in every season.
-FIRST_SEASON = 2022
-
 
 class Group(StrEnum):
     ID = "id"  # identifies the pitch or the pitcher/batter
@@ -38,7 +34,8 @@ class Column:
     type: str  # DuckDB type
     group: Group
     unit: str | None = None  # None: a code, count, ID, probability or other unitless value
-    first_season: int = FIRST_SEASON  # first season Savant populates it
+    # First season Savant populates it; None means every season this project ingests.
+    first_season: int | None = None
 
 
 # Savant's `pitch_number` is the pitch's position within the plate appearance, so the
@@ -53,127 +50,126 @@ IDENTIFIER_COLUMNS = (*KEY_COLUMNS, "pitcher", "batter", "game_date")
 # view: x is positive toward first base.
 BAT_TRACKING_FROM = 2023  # Savant's bat tracking starts 2023-07-14
 
-_G = Group
 SOURCE_COLUMNS: tuple[Column, ...] = (
-    Column("pitch_type", "VARCHAR", _G.SAVANT_MODEL),
-    Column("game_date", "DATE", _G.CONTEXT),
-    Column("release_speed", "DOUBLE", _G.PHYSICS, "mph"),
-    Column("release_pos_x", "DOUBLE", _G.PHYSICS, "ft"),
-    Column("release_pos_z", "DOUBLE", _G.PHYSICS, "ft"),
-    Column("player_name", "VARCHAR", _G.ID),  # the pitcher, "Last, First"
-    Column("batter", "BIGINT", _G.ID),
-    Column("pitcher", "BIGINT", _G.ID),
-    Column("events", "VARCHAR", _G.OUTCOME),  # plate appearance result, on its last pitch
-    Column("description", "VARCHAR", _G.OUTCOME),  # pitch result; vocabulary below
-    Column("zone", "INTEGER", _G.LOCATION),  # 1–9 in the zone, 11–14 outside
-    Column("des", "VARCHAR", _G.OUTCOME),  # play-by-play text
-    Column("game_type", "VARCHAR", _G.CONTEXT),
-    Column("stand", "VARCHAR", _G.CONTEXT),
-    Column("p_throws", "VARCHAR", _G.CONTEXT),
-    Column("home_team", "VARCHAR", _G.CONTEXT),
-    Column("away_team", "VARCHAR", _G.CONTEXT),
-    Column("type", "VARCHAR", _G.OUTCOME),  # B ball, S strike, X in play
-    Column("hit_location", "INTEGER", _G.OUTCOME),  # fielder position 1–9
-    Column("bb_type", "VARCHAR", _G.OUTCOME),
-    Column("balls", "INTEGER", _G.CONTEXT),
-    Column("strikes", "INTEGER", _G.CONTEXT),
-    Column("game_year", "INTEGER", _G.CONTEXT),
-    Column("pfx_x", "DOUBLE", _G.PHYSICS, "ft"),  # movement vs. a spinless ball
-    Column("pfx_z", "DOUBLE", _G.PHYSICS, "ft"),
-    Column("plate_x", "DOUBLE", _G.LOCATION, "ft"),  # mid-plate from 2026, front before
-    Column("plate_z", "DOUBLE", _G.LOCATION, "ft"),
-    Column("on_3b", "BIGINT", _G.CONTEXT),  # runner's player ID, empty if base open
-    Column("on_2b", "BIGINT", _G.CONTEXT),
-    Column("on_1b", "BIGINT", _G.CONTEXT),
-    Column("outs_when_up", "INTEGER", _G.CONTEXT),
-    Column("inning", "INTEGER", _G.CONTEXT),
-    Column("inning_topbot", "VARCHAR", _G.CONTEXT),
-    Column("hc_x", "DOUBLE", _G.OUTCOME, "px"),  # spray chart image coordinates
-    Column("hc_y", "DOUBLE", _G.OUTCOME, "px"),
+    Column("pitch_type", "VARCHAR", Group.SAVANT_MODEL),
+    Column("game_date", "DATE", Group.CONTEXT),
+    Column("release_speed", "DOUBLE", Group.PHYSICS, "mph"),
+    Column("release_pos_x", "DOUBLE", Group.PHYSICS, "ft"),
+    Column("release_pos_z", "DOUBLE", Group.PHYSICS, "ft"),
+    Column("player_name", "VARCHAR", Group.ID),  # the pitcher, "Last, First"
+    Column("batter", "BIGINT", Group.ID),
+    Column("pitcher", "BIGINT", Group.ID),
+    Column("events", "VARCHAR", Group.OUTCOME),  # plate appearance result, on its last pitch
+    Column("description", "VARCHAR", Group.OUTCOME),  # pitch result; vocabulary below
+    Column("zone", "INTEGER", Group.LOCATION),  # 1–9 in the zone, 11–14 outside
+    Column("des", "VARCHAR", Group.OUTCOME),  # play-by-play text
+    Column("game_type", "VARCHAR", Group.CONTEXT),
+    Column("stand", "VARCHAR", Group.CONTEXT),
+    Column("p_throws", "VARCHAR", Group.CONTEXT),
+    Column("home_team", "VARCHAR", Group.CONTEXT),
+    Column("away_team", "VARCHAR", Group.CONTEXT),
+    Column("type", "VARCHAR", Group.OUTCOME),  # B ball, S strike, X in play
+    Column("hit_location", "INTEGER", Group.OUTCOME),  # fielder position 1–9
+    Column("bb_type", "VARCHAR", Group.OUTCOME),
+    Column("balls", "INTEGER", Group.CONTEXT),
+    Column("strikes", "INTEGER", Group.CONTEXT),
+    Column("game_year", "INTEGER", Group.CONTEXT),
+    Column("pfx_x", "DOUBLE", Group.PHYSICS, "ft"),  # movement vs. a spinless ball
+    Column("pfx_z", "DOUBLE", Group.PHYSICS, "ft"),
+    Column("plate_x", "DOUBLE", Group.LOCATION, "ft"),  # mid-plate from 2026, front before
+    Column("plate_z", "DOUBLE", Group.LOCATION, "ft"),
+    Column("on_3b", "BIGINT", Group.CONTEXT),  # runner's player ID, empty if base open
+    Column("on_2b", "BIGINT", Group.CONTEXT),
+    Column("on_1b", "BIGINT", Group.CONTEXT),
+    Column("outs_when_up", "INTEGER", Group.CONTEXT),
+    Column("inning", "INTEGER", Group.CONTEXT),
+    Column("inning_topbot", "VARCHAR", Group.CONTEXT),
+    Column("hc_x", "DOUBLE", Group.OUTCOME, "px"),  # spray chart image coordinates
+    Column("hc_y", "DOUBLE", Group.OUTCOME, "px"),
     # Trajectory fit at y = 50 ft from home plate.
-    Column("vx0", "DOUBLE", _G.PHYSICS, "ft/s"),
-    Column("vy0", "DOUBLE", _G.PHYSICS, "ft/s"),
-    Column("vz0", "DOUBLE", _G.PHYSICS, "ft/s"),
-    Column("ax", "DOUBLE", _G.PHYSICS, "ft/s^2"),
-    Column("ay", "DOUBLE", _G.PHYSICS, "ft/s^2"),
-    Column("az", "DOUBLE", _G.PHYSICS, "ft/s^2"),
-    Column("sz_top", "DOUBLE", _G.LOCATION, "ft"),  # ABS-defined from 2026
-    Column("sz_bot", "DOUBLE", _G.LOCATION, "ft"),
-    Column("hit_distance_sc", "DOUBLE", _G.OUTCOME, "ft"),
-    Column("launch_speed", "DOUBLE", _G.OUTCOME, "mph"),
-    Column("launch_angle", "DOUBLE", _G.OUTCOME, "deg"),
-    Column("effective_speed", "DOUBLE", _G.PHYSICS, "mph"),  # velocity adjusted for extension
-    Column("release_spin_rate", "DOUBLE", _G.PHYSICS, "rpm"),
-    Column("release_extension", "DOUBLE", _G.PHYSICS, "ft"),
-    Column("game_pk", "BIGINT", _G.ID),
-    *(Column(f"fielder_{n}", "BIGINT", _G.CONTEXT) for n in range(2, 10)),  # 2 is the catcher
-    Column("release_pos_y", "DOUBLE", _G.PHYSICS, "ft"),
-    Column("estimated_ba_using_speedangle", "DOUBLE", _G.OUTCOME),
-    Column("estimated_woba_using_speedangle", "DOUBLE", _G.OUTCOME),
-    Column("woba_value", "DOUBLE", _G.OUTCOME),
-    Column("woba_denom", "INTEGER", _G.OUTCOME),
-    Column("babip_value", "INTEGER", _G.OUTCOME),
-    Column("iso_value", "INTEGER", _G.OUTCOME),
-    Column("launch_speed_angle", "INTEGER", _G.OUTCOME),  # contact quality code 1–6
-    Column("at_bat_number", "INTEGER", _G.ID),
-    Column("pitch_number", "INTEGER", _G.ID),
-    Column("pitch_name", "VARCHAR", _G.SAVANT_MODEL),
-    Column("home_score", "INTEGER", _G.CONTEXT),
-    Column("away_score", "INTEGER", _G.CONTEXT),
-    Column("bat_score", "INTEGER", _G.CONTEXT),
-    Column("fld_score", "INTEGER", _G.CONTEXT),
-    Column("post_away_score", "INTEGER", _G.OUTCOME),
-    Column("post_home_score", "INTEGER", _G.OUTCOME),
-    Column("post_bat_score", "INTEGER", _G.OUTCOME),
-    Column("post_fld_score", "INTEGER", _G.OUTCOME),
-    Column("if_fielding_alignment", "VARCHAR", _G.CONTEXT),
-    Column("of_fielding_alignment", "VARCHAR", _G.CONTEXT),
-    Column("spin_axis", "DOUBLE", _G.PHYSICS, "deg"),
-    Column("delta_home_win_exp", "DOUBLE", _G.OUTCOME),
-    Column("delta_run_exp", "DOUBLE", _G.OUTCOME, "runs"),
-    Column("bat_speed", "DOUBLE", _G.BAT_TRACKING, "mph", BAT_TRACKING_FROM),
-    Column("swing_length", "DOUBLE", _G.BAT_TRACKING, "ft", BAT_TRACKING_FROM),
+    Column("vx0", "DOUBLE", Group.PHYSICS, "ft/s"),
+    Column("vy0", "DOUBLE", Group.PHYSICS, "ft/s"),
+    Column("vz0", "DOUBLE", Group.PHYSICS, "ft/s"),
+    Column("ax", "DOUBLE", Group.PHYSICS, "ft/s^2"),
+    Column("ay", "DOUBLE", Group.PHYSICS, "ft/s^2"),
+    Column("az", "DOUBLE", Group.PHYSICS, "ft/s^2"),
+    Column("sz_top", "DOUBLE", Group.LOCATION, "ft"),  # ABS-defined from 2026
+    Column("sz_bot", "DOUBLE", Group.LOCATION, "ft"),
+    Column("hit_distance_sc", "DOUBLE", Group.OUTCOME, "ft"),
+    Column("launch_speed", "DOUBLE", Group.OUTCOME, "mph"),
+    Column("launch_angle", "DOUBLE", Group.OUTCOME, "deg"),
+    Column("effective_speed", "DOUBLE", Group.PHYSICS, "mph"),  # velocity adjusted for extension
+    Column("release_spin_rate", "DOUBLE", Group.PHYSICS, "rpm"),
+    Column("release_extension", "DOUBLE", Group.PHYSICS, "ft"),
+    Column("game_pk", "BIGINT", Group.ID),
+    *(Column(f"fielder_{n}", "BIGINT", Group.CONTEXT) for n in range(2, 10)),  # 2 is the catcher
+    Column("release_pos_y", "DOUBLE", Group.PHYSICS, "ft"),
+    Column("estimated_ba_using_speedangle", "DOUBLE", Group.OUTCOME),
+    Column("estimated_woba_using_speedangle", "DOUBLE", Group.OUTCOME),
+    Column("woba_value", "DOUBLE", Group.OUTCOME),
+    Column("woba_denom", "INTEGER", Group.OUTCOME),
+    Column("babip_value", "INTEGER", Group.OUTCOME),
+    Column("iso_value", "INTEGER", Group.OUTCOME),
+    Column("launch_speed_angle", "INTEGER", Group.OUTCOME),  # contact quality code 1–6
+    Column("at_bat_number", "INTEGER", Group.ID),
+    Column("pitch_number", "INTEGER", Group.ID),
+    Column("pitch_name", "VARCHAR", Group.SAVANT_MODEL),
+    Column("home_score", "INTEGER", Group.CONTEXT),
+    Column("away_score", "INTEGER", Group.CONTEXT),
+    Column("bat_score", "INTEGER", Group.CONTEXT),
+    Column("fld_score", "INTEGER", Group.CONTEXT),
+    Column("post_away_score", "INTEGER", Group.OUTCOME),
+    Column("post_home_score", "INTEGER", Group.OUTCOME),
+    Column("post_bat_score", "INTEGER", Group.OUTCOME),
+    Column("post_fld_score", "INTEGER", Group.OUTCOME),
+    Column("if_fielding_alignment", "VARCHAR", Group.CONTEXT),
+    Column("of_fielding_alignment", "VARCHAR", Group.CONTEXT),
+    Column("spin_axis", "DOUBLE", Group.PHYSICS, "deg"),
+    Column("delta_home_win_exp", "DOUBLE", Group.OUTCOME),
+    Column("delta_run_exp", "DOUBLE", Group.OUTCOME, "runs"),
+    Column("bat_speed", "DOUBLE", Group.BAT_TRACKING, "mph", BAT_TRACKING_FROM),
+    Column("swing_length", "DOUBLE", Group.BAT_TRACKING, "ft", BAT_TRACKING_FROM),
     # Inches, inferred from the distribution (2024 median 1.5, 99th percentile 18).
-    Column("miss_distance", "DOUBLE", _G.BAT_TRACKING, "in", BAT_TRACKING_FROM),
-    Column("estimated_slg_using_speedangle", "DOUBLE", _G.OUTCOME),
-    Column("delta_pitcher_run_exp", "DOUBLE", _G.OUTCOME, "runs"),
-    Column("hyper_speed", "DOUBLE", _G.OUTCOME, "mph"),  # adjusted exit velocity
-    Column("home_score_diff", "INTEGER", _G.CONTEXT),
-    Column("bat_score_diff", "INTEGER", _G.CONTEXT),
+    Column("miss_distance", "DOUBLE", Group.BAT_TRACKING, "in", BAT_TRACKING_FROM),
+    Column("estimated_slg_using_speedangle", "DOUBLE", Group.OUTCOME),
+    Column("delta_pitcher_run_exp", "DOUBLE", Group.OUTCOME, "runs"),
+    Column("hyper_speed", "DOUBLE", Group.OUTCOME, "mph"),  # adjusted exit velocity
+    Column("home_score_diff", "INTEGER", Group.CONTEXT),
+    Column("bat_score_diff", "INTEGER", Group.CONTEXT),
     # Before the pitch: this pitch's value plus its delta is the next pitch's value
     # (99.9% of 2024 pitches), so these are situation, not outcome.
-    Column("home_win_exp", "DOUBLE", _G.CONTEXT),
-    Column("bat_win_exp", "DOUBLE", _G.CONTEXT),
-    Column("age_pit_legacy", "INTEGER", _G.CONTEXT, "years"),
-    Column("age_bat_legacy", "INTEGER", _G.CONTEXT, "years"),
-    Column("age_pit", "INTEGER", _G.CONTEXT, "years"),
-    Column("age_bat", "INTEGER", _G.CONTEXT, "years"),
-    Column("n_thruorder_pitcher", "INTEGER", _G.CONTEXT),  # times through the order
-    Column("n_priorpa_thisgame_player_at_bat", "INTEGER", _G.CONTEXT),
-    Column("pitcher_days_since_prev_game", "INTEGER", _G.CONTEXT, "days"),
-    Column("batter_days_since_prev_game", "INTEGER", _G.CONTEXT, "days"),
-    Column("pitcher_days_until_next_game", "INTEGER", _G.FUTURE, "days"),
-    Column("batter_days_until_next_game", "INTEGER", _G.FUTURE, "days"),
+    Column("home_win_exp", "DOUBLE", Group.CONTEXT),
+    Column("bat_win_exp", "DOUBLE", Group.CONTEXT),
+    Column("age_pit_legacy", "INTEGER", Group.CONTEXT, "years"),
+    Column("age_bat_legacy", "INTEGER", Group.CONTEXT, "years"),
+    Column("age_pit", "INTEGER", Group.CONTEXT, "years"),
+    Column("age_bat", "INTEGER", Group.CONTEXT, "years"),
+    Column("n_thruorder_pitcher", "INTEGER", Group.CONTEXT),  # times through the order
+    Column("n_priorpa_thisgame_player_at_bat", "INTEGER", Group.CONTEXT),
+    Column("pitcher_days_since_prev_game", "INTEGER", Group.CONTEXT, "days"),
+    Column("batter_days_since_prev_game", "INTEGER", Group.CONTEXT, "days"),
+    Column("pitcher_days_until_next_game", "INTEGER", Group.FUTURE, "days"),
+    Column("batter_days_until_next_game", "INTEGER", Group.FUTURE, "days"),
     # Feet despite the name "break": api_break_x_arm averages 0.64 on 2024 four-seamers,
     # |pfx_x| 0.65. _arm is arm side positive; _batter_in is toward the batter positive.
-    Column("api_break_z_with_gravity", "DOUBLE", _G.PHYSICS, "ft"),
-    Column("api_break_x_arm", "DOUBLE", _G.PHYSICS, "ft"),
-    Column("api_break_x_batter_in", "DOUBLE", _G.PHYSICS, "ft"),
-    Column("arm_angle", "DOUBLE", _G.PHYSICS, "deg"),
-    Column("attack_angle", "DOUBLE", _G.BAT_TRACKING, "deg", BAT_TRACKING_FROM),
-    Column("attack_direction", "DOUBLE", _G.BAT_TRACKING, "deg", BAT_TRACKING_FROM),
-    Column("swing_path_tilt", "DOUBLE", _G.BAT_TRACKING, "deg", BAT_TRACKING_FROM),
+    Column("api_break_z_with_gravity", "DOUBLE", Group.PHYSICS, "ft"),
+    Column("api_break_x_arm", "DOUBLE", Group.PHYSICS, "ft"),
+    Column("api_break_x_batter_in", "DOUBLE", Group.PHYSICS, "ft"),
+    Column("arm_angle", "DOUBLE", Group.PHYSICS, "deg"),
+    Column("attack_angle", "DOUBLE", Group.BAT_TRACKING, "deg", BAT_TRACKING_FROM),
+    Column("attack_direction", "DOUBLE", Group.BAT_TRACKING, "deg", BAT_TRACKING_FROM),
+    Column("swing_path_tilt", "DOUBLE", Group.BAT_TRACKING, "deg", BAT_TRACKING_FROM),
     Column(
         "intercept_ball_minus_batter_pos_x_inches",
         "DOUBLE",
-        _G.BAT_TRACKING,
+        Group.BAT_TRACKING,
         "in",
         BAT_TRACKING_FROM,
     ),
     Column(
         "intercept_ball_minus_batter_pos_y_inches",
         "DOUBLE",
-        _G.BAT_TRACKING,
+        Group.BAT_TRACKING,
         "in",
         BAT_TRACKING_FROM,
     ),

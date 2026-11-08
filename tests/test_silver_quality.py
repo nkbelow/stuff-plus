@@ -1,5 +1,6 @@
 import contextlib
 import datetime as dt
+import gzip
 import json
 from typing import Any
 
@@ -9,8 +10,15 @@ import pytest
 from stuffplus.config import Bounds, DataConfig
 from stuffplus.ingest.bronze import META_FILE, partition_dir, write_partition
 from stuffplus.ingest.savant import FetchResult
-from stuffplus.silver.build import SilverAuditError, SilverBuildError, audit_season, build_season
-from stuffplus.silver.layout import SilverLayout
+from stuffplus.silver.build import (
+    SilverAuditError,
+    SilverBuildError,
+    audit_season,
+    audit_seasons,
+    build_season,
+)
+from stuffplus.silver.layout import Report, SilverLayout
+from stuffplus.silver.quality import CheckResult, Severity, format_report
 from tests.conftest import (
     GAME_DATE,
     SILVER_FIXTURE_HEADER,
@@ -31,7 +39,7 @@ def clean_cfg(cfg: DataConfig) -> DataConfig:
 
 def results(cfg: DataConfig, season: int = SEASON) -> dict[str, tuple[bool, str]]:
     """The last audit's results as written to disk: check name -> (passed, detail)."""
-    path = SilverLayout(cfg.silver_dir).dq_results(season)
+    path = SilverLayout(cfg.silver_dir).dq(Report.RESULTS, season)
     rows = duckdb.execute(f"SELECT check_name, passed, detail FROM read_parquet('{path}')")
     return {name: (passed, detail) for name, passed, detail in rows.fetchall()}
 
@@ -162,7 +170,11 @@ def test_column_empty_after_its_first_season_warns(clean_cfg):
     ("overrides", "check"),
     [
         ({"release_speed": "120"}, "range_release_speed"),
+        ({"release_spin_rate": "4100"}, "range_release_spin_rate"),
+        ({"release_extension": "2.5"}, "range_release_extension"),
+        ({"release_pos_z": "8.5"}, "range_release_pos_z"),
         ({"pfx_x": "-3.5"}, "range_pfx_x"),
+        ({"pfx_z": "3.2"}, "range_pfx_z"),
         ({"type": "B"}, "description_type_consistent"),
         (
             {"description": "hit_into_play", "type": "X", "launch_speed": ""},
@@ -188,7 +200,7 @@ def test_known_exceptions_are_excused(clean_cfg):
 
 
 def games(cfg: DataConfig) -> list[tuple[Any, ...]]:
-    path = SilverLayout(cfg.silver_dir).dq("dq_games", SEASON)
+    path = SilverLayout(cfg.silver_dir).dq(Report.GAMES, SEASON)
     query = f"SELECT game_pk, pitches, spin_coverage, flags FROM read_parquet('{path}')"
     return duckdb.execute(query).fetchall()
 
@@ -215,7 +227,7 @@ def test_short_game_is_listed(cfg):
 
 def test_null_rates_report_core_physics_by_month(clean_cfg):
     audit(clean_cfg, silver_pitch(1), silver_pitch(2, release_spin_rate=""))
-    path = SilverLayout(clean_cfg.silver_dir).dq("dq_null_rates", SEASON)
+    path = SilverLayout(clean_cfg.silver_dir).dq(Report.NULL_RATES, SEASON)
     rows = duckdb.execute(
         f"SELECT season, month, pitches_thrown, null_pct FROM read_parquet('{path}') "
         "WHERE column_name = 'release_spin_rate'"
@@ -228,7 +240,7 @@ def test_reaudit_rewrites_results_without_touching_published_data(clean_cfg):
     build_season(clean_cfg, SEASON)
     layout = SilverLayout(clean_cfg.silver_dir)
     before = layout.pitches(SEASON).read_bytes()
-    layout.dq_results(SEASON).unlink()
+    layout.dq(Report.RESULTS, SEASON).unlink()
 
     found = audit_season(clean_cfg, SEASON)
 
@@ -241,3 +253,51 @@ def test_reaudit_of_unpublished_season_raises(clean_cfg):
     write_bronze(clean_cfg.bronze_dir, GAME_DATE, [silver_pitch(1)])
     with pytest.raises(SilverBuildError, match="not published"):
         audit_season(clean_cfg, SEASON)
+
+
+def test_games_report_core_physics_coverage(clean_cfg):
+    audit(clean_cfg, silver_pitch(1), silver_pitch(2, arm_angle=""))
+    path = SilverLayout(clean_cfg.silver_dir).dq(Report.GAMES, SEASON)
+    query = f"SELECT core_physics_coverage FROM read_parquet('{path}')"
+    assert duckdb.execute(query).fetchall() == [(0.5,)]
+
+
+def test_audit_seasons_defaults_to_published_and_reports_blocked(clean_cfg):
+    write_bronze(clean_cfg.bronze_dir, GAME_DATE, [silver_pitch(1)])
+    build_season(clean_cfg, SEASON)
+    day = dt.date(2023, 4, 12)
+    write_bronze(clean_cfg.bronze_dir, day, [silver_pitch(1, game_date=day)])  # never built
+
+    summary = audit_seasons(clean_cfg)
+    assert list(summary.audited) == [SEASON]
+    assert summary.blocked == []
+
+    assert audit_seasons(clean_cfg, [2023]).blocked == [2023]  # not published
+
+
+def test_unreadable_bronze_file_fails_the_season(clean_cfg):
+    write_bronze(clean_cfg.bronze_dir, GAME_DATE, [silver_pitch(1)])
+    data_file = partition_dir(clean_cfg.bronze_dir, GAME_DATE) / "part.csv.gz"
+    data_file.write_bytes(gzip.compress(b""))
+    with pytest.raises(SilverBuildError, match="season 2024: unreadable bronze file.*no header"):
+        build_season(clean_cfg, SEASON)
+
+
+def test_report_lists_failures_and_warnings_first():
+    def result(name: str, severity: Severity, passed: bool) -> CheckResult:
+        return CheckResult(name, SEASON, severity, passed, 0.0, 0.0, f"{name} detail")
+
+    report = format_report(
+        SEASON,
+        [
+            result("ok_check", Severity.HARD, True),
+            result("warned_check", Severity.WARN, False),
+            result("failed_check", Severity.HARD, False),
+        ],
+    ).splitlines()
+    assert report[0] == "2024: 1 passed, 1 hard failure(s), 1 warning(s)"
+    assert [line.split()[:3] for line in report[1:]] == [
+        ["FAIL", "[hard]", "failed_check"],
+        ["WARN", "[warn]", "warned_check"],
+        ["pass", "[hard]", "ok_check"],
+    ]

@@ -20,7 +20,7 @@ import duckdb
 
 from stuffplus.config import DataConfig
 from stuffplus.fs import atomic_path
-from stuffplus.silver.layout import SilverLayout
+from stuffplus.silver.layout import Report, SilverLayout
 from stuffplus.sql import quote_literal
 
 
@@ -45,7 +45,7 @@ def refresh_catalog(cfg: DataConfig) -> list[str]:
                 silver.dq(report, "*"),
                 "read_parquet({}, hive_partitioning = false)",
             )
-            for report in ("dq_results", "dq_null_rates", "dq_games")
+            for report in Report
         },
     }
     views = {

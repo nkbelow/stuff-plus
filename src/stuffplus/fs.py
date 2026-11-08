@@ -22,3 +22,8 @@ def atomic_path(path: Path) -> Iterator[Path]:
         tmp.unlink(missing_ok=True)
         raise
     os.replace(tmp, path)
+
+
+def hive_seasons(parent: Path) -> list[int]:
+    """Seasons of the `season=YYYY` directories directly under `parent`."""
+    return sorted(int(p.name.removeprefix("season=")) for p in parent.glob("season=*"))

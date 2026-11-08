@@ -33,7 +33,7 @@ from stuffplus.silver.contract import (
     IDENTIFIER_COLUMNS,
     SOURCE_COLUMNS,
 )
-from stuffplus.silver.layout import SilverLayout
+from stuffplus.silver.layout import Report, SilverLayout
 from stuffplus.silver.source import SQL_DIR, BronzeProfile, BronzeSeason
 from stuffplus.sql import quote_literal
 
@@ -54,8 +54,14 @@ CORE_PHYSICS = (
 # interference the batter reaches first; Savant records `hit_into_play` with type S.
 KNOWN_TYPE_EXCEPTIONS = {"catcher_interf": "catcher interference"}
 
-EXAMPLES = 5  # violations quoted in a result's detail
-GAME_EXAMPLES = 20  # flagged games quoted in a result's detail
+# How much a result's detail quotes. Presentation only: every violation is still counted,
+# and dq_games lists every flagged game.
+EXAMPLES = 5
+GAME_EXAMPLES = 20
+
+# dq_games flags, set in games.sql and matched by the per-game checks.
+SPIN_OUTAGE = "spin_outage"
+PITCH_COUNT = "pitch_count"
 
 
 class Severity(StrEnum):
@@ -84,6 +90,15 @@ class CheckResult:
     metric: float
     threshold: float
     detail: str
+
+    @property
+    def blocks(self) -> bool:
+        """A failed hard check: the season can't be published."""
+        return self.severity is Severity.HARD and not self.passed
+
+    @property
+    def warns(self) -> bool:
+        return self.severity is Severity.WARN and not self.passed
 
 
 def run_audit(ctx: AuditContext) -> list[CheckResult]:
@@ -148,7 +163,7 @@ def run_audit(ctx: AuditContext) -> list[CheckResult]:
         _game_check(
             ctx,
             "spin_outage_games",
-            flag="spin_outage",
+            flag=SPIN_OUTAGE,
             ok="no game is a spin tracking outage",
             bad=f"games with spin on under {ctx.quality.spin_outage_coverage:.0%} of pitches "
             "thrown (tracking outages)",
@@ -156,7 +171,7 @@ def run_audit(ctx: AuditContext) -> list[CheckResult]:
         _game_check(
             ctx,
             "pitches_per_game",
-            flag="pitch_count",
+            flag=PITCH_COUNT,
             ok="every game's pitch count is in range",
             bad=f"games outside {ctx.quality.pitches_per_game.min:g}–"
             f"{ctx.quality.pitches_per_game.max:g} pitches (rain, extra innings?)",
@@ -183,14 +198,10 @@ def run_audit(ctx: AuditContext) -> list[CheckResult]:
     ]
 
 
-def has_hard_failure(results: list[CheckResult]) -> bool:
-    return any(r.severity is Severity.HARD and not r.passed for r in results)
-
-
 def format_report(season: int, results: list[CheckResult]) -> str:
     """One line per check: failures and warnings first."""
-    failed = [r for r in results if r.severity is Severity.HARD and not r.passed]
-    warned = [r for r in results if r.severity is Severity.WARN and not r.passed]
+    failed = [r for r in results if r.blocks]
+    warned = [r for r in results if r.warns]
     lines = [
         f"{season}: {len(results) - len(failed) - len(warned)} passed, "
         f"{len(failed)} hard failure(s), {len(warned)} warning(s)"
@@ -224,7 +235,7 @@ def write_audit(
             for r in results
         ],
     )
-    for report in ("dq_results", "dq_null_rates", "dq_games"):
+    for report in Report:
         with atomic_path(layout.dq(report, season)) as tmp:
             con.execute(f"COPY {report} TO {quote_literal(tmp)} (FORMAT parquet)")
 
@@ -243,8 +254,14 @@ def _build_reports(ctx: AuditContext) -> None:
     )
     games = ctx.quality.pitches_per_game
     ctx.con.execute(
-        (SQL_DIR / "games.sql").read_text().format(season=ctx.season, thrown=thrown),
-        [ctx.quality.spin_outage_coverage, games.min, games.max],
+        (SQL_DIR / "games.sql")
+        .read_text()
+        .format(
+            season=ctx.season,
+            thrown=thrown,
+            core_physics=" AND ".join(f'"{c}" IS NOT NULL' for c in CORE_PHYSICS),
+        ),
+        [ctx.quality.spin_outage_coverage, games.min, games.max, SPIN_OUTAGE, PITCH_COUNT],
     )
 
 
@@ -310,12 +327,7 @@ def _game_check(ctx: AuditContext, name: str, *, flag: str, ok: str, bad: str) -
 
 def _schema_contract(ctx: AuditContext) -> CheckResult:
     """Every bronze file carries every contract column. Missing ones are cast as NULL."""
-    missing: dict[str, list[dt.date]] = {}
-    for p in ctx.bronze.partitions:
-        header = set(ctx.bronze.headers[p.data_file])
-        for column in SOURCE_COLUMNS:
-            if column.name not in header:
-                missing.setdefault(column.name, []).append(p.game_date)
+    missing = ctx.bronze.missing(c.name for c in SOURCE_COLUMNS)
     metric = sum(len(dates) for dates in missing.values())
     detail = (
         f"every bronze file has all {len(SOURCE_COLUMNS)} contract columns"
@@ -395,7 +407,9 @@ def _game_date_matches_partition(ctx: AuditContext) -> CheckResult:
 
 def _columns_populated(ctx: AuditContext) -> CheckResult:
     """Columns entirely empty in a season where Savant should populate them."""
-    expected = [c.name for c in SOURCE_COLUMNS if c.first_season <= ctx.season]
+    expected = [
+        c.name for c in SOURCE_COLUMNS if c.first_season is None or c.first_season <= ctx.season
+    ]
     counts = ctx.con.execute(
         "SELECT " + ", ".join(f'count("{c}")' for c in expected) + " FROM audited"
     ).fetchall()[0]
