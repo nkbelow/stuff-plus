@@ -13,6 +13,7 @@ Re-runs are idempotent: complete partitions are skipped unless `force=True`, and
 gzip is written with mtime=0 so identical responses produce identical files.
 """
 
+import csv
 import datetime as dt
 import gzip
 import json
@@ -74,6 +75,12 @@ def complete_partitions(bronze_dir: Path, season: int) -> list[Partition]:
             )
         )
     return partitions
+
+
+def read_header(data_file: Path) -> tuple[str, ...]:
+    """A bronze file's column names, in order. Savant prefixes a UTF-8 BOM."""
+    with gzip.open(data_file, "rt", encoding="utf-8-sig", newline="") as f:
+        return tuple(next(csv.reader(f), []))
 
 
 def seasons(bronze_dir: Path) -> list[int]:

@@ -14,7 +14,8 @@ from stuffplus.silver.build import (
 )
 from stuffplus.silver.contract import SILVER_COLUMNS
 from stuffplus.silver.layout import SilverLayout
-from tests.conftest import GAME_DATE, silver_pitch, write_bronze
+from stuffplus.silver.quality import has_hard_failure
+from tests.conftest import GAME_DATE, SILVER_FIXTURE_HEADER, silver_pitch, write_bronze
 
 NEXT_DAY = GAME_DATE + dt.timedelta(days=1)
 EARLY = dt.datetime(2026, 11, 7, 9, 0, tzinfo=dt.UTC)
@@ -53,7 +54,7 @@ def test_build_sorts_and_attaches_lineage(cfg):
     result = build_season(cfg, 2024)
 
     assert result.rows == 3
-    assert [r.passed for r in result.results] == [True]
+    assert not has_hard_failure(result.results)
     rows = duckdb.execute(
         f"SELECT pitch_id, bronze_fetched_at FROM read_parquet('{published(cfg)}')"
     ).fetchall()
@@ -76,9 +77,12 @@ def test_exact_duplicate_rows_collapse(cfg):
 
 
 def test_rows_differing_only_outside_the_contract_are_not_duplicates(cfg):
-    # `des` isn't a silver column, but a difference there still means the rows conflict.
+    # `new_col` isn't a silver column, but a difference there still means the rows conflict.
     write_bronze(
-        cfg.bronze_dir, GAME_DATE, [silver_pitch(1, des="one"), silver_pitch(1, des="two")]
+        cfg.bronze_dir,
+        GAME_DATE,
+        [silver_pitch(1, new_col="one"), silver_pitch(1, new_col="two")],
+        header=[*SILVER_FIXTURE_HEADER, "new_col"],
     )
     with pytest.raises(SilverAuditError, match="745000-1-1"):
         build_season(cfg, 2024)
@@ -99,14 +103,37 @@ def test_conflicting_duplicate_blocks_publish_and_keeps_previous_season(cfg):
 
     assert content_hash(published(cfg)) == before
     results_file = SilverLayout(cfg.silver_dir).dq_results(2024)
-    results = duckdb.execute(f"SELECT check_name, passed FROM read_parquet('{results_file}')")
-    assert results.fetchall() == [("pitch_id_unique", False)]
+    failed = duckdb.execute(
+        f"SELECT check_name FROM read_parquet('{results_file}') "
+        "WHERE NOT passed AND severity = 'hard'"
+    )
+    assert failed.fetchall() == [("pitch_id_unique",)]
 
 
-def test_value_that_wont_cast_fails_the_season(cfg):
+def test_value_that_wont_cast_fails_naming_column_value_and_date(cfg):
     write_bronze(cfg.bronze_dir, GAME_DATE, [silver_pitch(1, release_speed="fast")])
-    with pytest.raises(SilverBuildError, match="season 2024.*fast"):
+    with pytest.raises(SilverBuildError, match="season 2024.*release_speed = 'fast' on 2024-04-12"):
         build_season(cfg, 2024)
+
+
+def test_integer_columns_reject_decimals_instead_of_rounding(cfg):
+    # DuckDB's own CAST('1.5' AS INTEGER) returns 2.
+    write_bronze(cfg.bronze_dir, GAME_DATE, [silver_pitch(1, balls="1.5")])
+    with pytest.raises(SilverBuildError, match="balls = '1.5' on 2024-04-12: not a INTEGER"):
+        build_season(cfg, 2024)
+
+
+def test_every_column_keeps_its_value_and_type(cfg):
+    write_bronze(cfg.bronze_dir, GAME_DATE, [silver_pitch(1, des="")])
+    build_season(cfg, 2024)
+    file = f"read_parquet('{published(cfg)}', hive_partitioning = false)"
+    row = duckdb.execute(f"SELECT * FROM {file}").fetchall()[0]
+    by_name = dict(zip([c.name for c in SILVER_COLUMNS], row, strict=True))
+    assert by_name["game_date"] == GAME_DATE
+    assert by_name["balls"] == 0
+    assert by_name["release_speed"] == 95.1
+    assert by_name["fielder_2"] == 100
+    assert by_name["des"] is None  # an empty bronze field is NULL
 
 
 def test_incomplete_and_empty_partitions_are_skipped(cfg):

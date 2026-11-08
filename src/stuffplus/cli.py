@@ -4,6 +4,7 @@ uv run stuff ingest backfill --season 2024
 uv run stuff ingest backfill --start 2024-04-01 --end 2024-04-30
 uv run stuff ingest status
 uv run stuff silver build [--season 2024]
+uv run stuff silver dq [--season 2024]
 uv run stuff catalog refresh
 """
 
@@ -18,7 +19,8 @@ from stuffplus.config import DEFAULT_DATA_CONFIG, date_range, load_data_config
 from stuffplus.ingest.bronze import backfill as run_backfill
 from stuffplus.ingest.bronze import season_summary, seasons
 from stuffplus.ingest.savant import SavantClient
-from stuffplus.silver.build import build_seasons
+from stuffplus.silver.build import audit_seasons, build_seasons, published_seasons
+from stuffplus.silver.quality import format_report, has_hard_failure
 
 app = typer.Typer(no_args_is_help=True)
 ingest_app = typer.Typer(no_args_is_help=True, help="Bronze-layer Statcast ingestion.")
@@ -103,6 +105,25 @@ def build(
     if summary.failed:
         for failed_season, err in summary.failed.items():
             typer.echo(f"  FAILED {failed_season}: {err}", err=True)
+        raise typer.Exit(code=1)
+
+
+@silver_app.command()
+def dq(
+    season: Annotated[
+        list[int] | None,
+        typer.Option(help="Season(s) to re-audit. Default: every published season."),
+    ] = None,
+    config: ConfigOpt = DEFAULT_DATA_CONFIG,
+) -> None:
+    """Re-audit published silver seasons and print the data quality report."""
+    cfg = load_data_config(config)
+    summary = audit_seasons(cfg, season or published_seasons(cfg))
+    for audited_season, results in summary.audited.items():
+        typer.echo(format_report(audited_season, results))
+    failed = [s for s, results in summary.audited.items() if has_hard_failure(results)]
+    if failed or summary.failed:
+        typer.echo(f"Hard failures in: {sorted([*failed, *summary.failed])}", err=True)
         raise typer.Exit(code=1)
 
 

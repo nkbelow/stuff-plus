@@ -22,6 +22,8 @@ def test_catalog_names_silver_and_bronze_as_views_only(cfg):
     assert refresh_catalog(cfg) == [
         "bronze.manifest",
         "bronze.statcast",
+        "silver.dq_games",
+        "silver.dq_null_rates",
         "silver.dq_results",
         "silver.pitches",
     ]
@@ -42,4 +44,4 @@ def test_catalog_can_be_deleted_and_rebuilt(cfg):
     refresh_catalog(cfg)
     cfg.catalog_path.unlink()
     refresh_catalog(cfg)
-    assert len(tables(cfg)) == 4
+    assert len(tables(cfg)) == 6

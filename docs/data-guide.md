@@ -11,7 +11,8 @@ repo's bronze data. Numbers are from the 2024 regular season (computed 2026-11-0
 ## One row = one pitch
 
 About 715,000 rows per regular season, 119 columns each, identical header in every season from
-2022 to 2026. Columns that didn't exist yet (bat tracking before 2024) arrive empty, not missing.
+2022 to 2026. Columns that didn't exist yet (bat tracking before 2023-07-14) arrive empty, not
+missing.
 
 A pitch is identified by `game_pk` + `at_bat_number` (plate appearance within the game) +
 `pitch_number` (pitch within the plate appearance). Silver joins them into `pitch_id`.
@@ -45,16 +46,16 @@ and the plan's discussion of integrating out location.
 | Identity | `game_pk`, `at_bat_number`, `pitch_number`, `pitcher`, `batter`, `player_name` | Who threw what, when | Keys and pitcher aggregation; never a feature |
 | Game state | `balls`, `strikes`, `outs_when_up`, `on_1b/2b/3b`, `inning`, scores | Situation before the pitch | Context; excluded from Stuff features |
 | Release | `release_speed`, `release_spin_rate`, `spin_axis`, `release_pos_x/z`, `release_extension`, `arm_angle` | How the ball left the hand | The core of Stuff+ |
-| Movement | `pfx_x`, `pfx_z` (feet), `api_break_*` (inches) | Movement relative to a spinless ball | Core features, converted to inches in gold |
+| Movement | `pfx_x`, `pfx_z`, `api_break_*` (all feet, despite the name "break") | Movement relative to a spinless ball | Core features, converted to inches in gold |
 | Trajectory | `vx0/vy0/vz0`, `ax/ay/az` | Physics fit of the flight at 50 ft from the plate | Redundant with movement; source for derived angles |
 | Location | `plate_x`, `plate_z`, `zone`, `sz_top/bot` | Where the pitch crossed the plate | Excluded from Stuff (that's command); redefined in 2026 |
 | Outcome | `description`, `type` (B/S/X), `events` | Result of the pitch / ball-strike-in play / result of the plate appearance | Builds the xRV label in gold; forbidden as a feature |
 | Batted ball | `launch_speed`, `launch_angle`, `hit_distance_sc`, `bb_type` | Contact quality on balls in play | Exit-velocity × launch-angle buckets for the label |
 | Savant's models | `pitch_type`, `pitch_name`, `estimated_woba_using_speedangle`, `estimated_ba_…` | Savant's classifications and estimates | `pitch_type` selects pitch families; estimates are outcomes |
 | Run and win value | `delta_run_exp`, `delta_pitcher_run_exp`, `home_win_exp`, … | Change in expected runs or win chance from the pitch | The raw, noisy quantity the label denoises |
-| Bat tracking | `bat_speed`, `swing_length`, `attack_angle`, … | The hitter's swing | Empty before 2024; forbidden as features |
+| Bat tracking | `bat_speed`, `swing_length`, `attack_angle`, … | The hitter's swing | Empty before 2023-07-14; forbidden as features |
 | Workload | `n_thruorder_pitcher`, `pitcher_days_since_prev_game`, `pitcher_days_until_next_game` | Fatigue and schedule | The "until next game" columns look into the future: a leakage trap |
-| Deprecated | `spin_dir`, `umpire`, `tfs_deprecated`, … | Old tracking system | Always empty; dropped in silver |
+| Deprecated | `spin_dir`, `umpire`, `sv_id`, `tfs_deprecated`, … (8) | Old tracking system | Always empty; dropped in silver |
 
 **Coordinates:** `x` is horizontal from the **catcher's view**. Gausman's splitter reads −14.5"
 because it runs toward his arm side (third-base side, from behind the plate); a left-hander's
@@ -98,7 +99,8 @@ pitchout                      54          avg run value +0.032
 bunt_foul_tip                 16          avg run value -0.045
 ```
 
-Run value is from the batting team's side: positive is good for the hitter.
+Run value is from the batting team's side: positive is good for the hitter. 2026 adds a 16th
+value, `swinging_pitchout` (one pitch, 2026-05-09); 2022 has no `automatic_strike`.
 
 - These averages are the raw material for the xRV label's outcome-class values.
 - A whiff is worth nearly twice a called strike: whiffs happen more often with two strikes,

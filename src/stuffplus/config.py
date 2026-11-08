@@ -32,10 +32,40 @@ class SavantConfig(BaseModel):
     user_agent: str = "stuff-plus/0.1 (personal research project)"
 
 
+class Bounds(BaseModel):
+    min: float
+    max: float
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Bounds:
+        if self.max < self.min:
+            raise ValueError(f"bounds max below min: {self.min} > {self.max}")
+        return self
+
+
+class QualityConfig(BaseModel):
+    """Thresholds for silver's warn checks. They report; they never block a publish."""
+
+    # A game whose pitches thrown have spin on fewer than this share is a tracking outage.
+    spin_outage_coverage: float = 0.5
+    # Pitches per game outside this range are listed for a look (rain, extra innings).
+    pitches_per_game: Bounds = Bounds(min=150, max=450)
+    # Plausible values per silver column, in the contract's units.
+    ranges: dict[str, Bounds] = {
+        "release_speed": Bounds(min=30, max=106),
+        "release_spin_rate": Bounds(min=0, max=4000),
+        "release_extension": Bounds(min=3, max=9),
+        "release_pos_z": Bounds(min=0, max=8),
+        "pfx_x": Bounds(min=-3, max=3),
+        "pfx_z": Bounds(min=-3, max=3),
+    }
+
+
 class DataConfig(BaseModel):
     data_root: Path
     seasons: dict[int, SeasonWindow]
     savant: SavantConfig = SavantConfig()
+    quality: QualityConfig = QualityConfig()
 
     @property
     def bronze_dir(self) -> Path:

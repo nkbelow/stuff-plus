@@ -18,8 +18,8 @@ information about the outcome, or about the future, reaching training or evaluat
    umpire, catcher) and identity (`pitcher`, `player_name`, team) stay out.
 2. **Outcome and future columns are never features:** `description`, `type`, `events`,
    `des`, `bb_type`, `launch_*`, `hit_*`, `hc_*`, `estimated_*`, `woba_*`, `babip_value`,
-   `iso_value`, `delta_*`, `post_*`, `*_win_exp`, bat tracking (`bat_speed`,
-   `swing_length`, `attack_*`, `swing_path_tilt`, `intercept_*`), and
+   `iso_value`, `hyper_speed`, `delta_*`, `post_*`, `*_win_exp`, bat tracking (`bat_speed`,
+   `swing_length`, `miss_distance`, `attack_*`, `swing_path_tilt`, `intercept_*`), and
    `*_days_until_next_game`. This list is the single source of truth; the allow-list
    test enforces it.
 3. **Fit on training seasons only.** Anything learned from data (label value tables,

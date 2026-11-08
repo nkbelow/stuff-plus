@@ -7,7 +7,7 @@ import pytest
 from stuffplus.config import DataConfig, SavantConfig, SeasonWindow
 from stuffplus.ingest.bronze import write_partition
 from stuffplus.ingest.savant import FetchResult, SavantClient, validate_csv
-from stuffplus.silver.contract import SOURCE_COLUMNS
+from stuffplus.silver.contract import DEPRECATED_COLUMNS, SOURCE_COLUMNS
 
 HEADER = [
     "pitch_type",
@@ -77,12 +77,18 @@ def make_client():
     return _make
 
 
-SILVER_FIXTURE_HEADER = [c.name for c in SOURCE_COLUMNS] + ["des"]
+# Savant's full header: every contract column plus the deprecated, always-empty ones.
+SILVER_FIXTURE_HEADER = [c.name for c in SOURCE_COLUMNS] + list(DEPRECATED_COLUMNS)
+
+# A valid value of each contract type, for columns a test doesn't care about.
+_FILLER = {"VARCHAR": "x", "INTEGER": "1", "BIGINT": "100", "DOUBLE": "1.5"}
 
 
 def silver_pitch(n: int, game_date: dt.date = GAME_DATE, **overrides: str) -> dict[str, str]:
-    """One bronze row carrying every starter schema contract column."""
-    row = {
+    """One bronze row: a called strike with every contract column populated."""
+    row = {c.name: _FILLER.get(c.type, "") for c in SOURCE_COLUMNS}
+    row |= {c: "" for c in DEPRECATED_COLUMNS}
+    row |= {
         "game_pk": "745000",
         "at_bat_number": "1",
         "pitch_number": str(n),
@@ -99,7 +105,7 @@ def silver_pitch(n: int, game_date: dt.date = GAME_DATE, **overrides: str) -> di
         "pitch_type": "FF",
         "description": "called_strike",
         "type": "S",
-        "events": "",
+        "events": "strikeout",
         "release_speed": "95.1",
         "release_spin_rate": "2300",
         "spin_axis": "210",
@@ -109,7 +115,6 @@ def silver_pitch(n: int, game_date: dt.date = GAME_DATE, **overrides: str) -> di
         "release_pos_z": "5.8",
         "release_extension": "6.5",
         "arm_angle": "44.6",
-        "des": "",
     }
     row.update(overrides)
     return row
@@ -120,9 +125,10 @@ def write_bronze(
     game_date: dt.date,
     rows: list[dict[str, str]],
     fetched_at: dt.datetime = dt.datetime(2026, 11, 7, 12, 0, tzinfo=dt.UTC),
+    header: list[str] = SILVER_FIXTURE_HEADER,
 ) -> None:
     """Write one complete bronze partition through the real bronze writer."""
-    body = savant_csv(rows, header=SILVER_FIXTURE_HEADER)
+    body = savant_csv(rows, header=header)
     n_rows, columns, dupes = validate_csv(body, game_date)
     write_partition(
         bronze_dir,

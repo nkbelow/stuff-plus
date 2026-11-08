@@ -32,17 +32,21 @@ def refresh_catalog(cfg: DataConfig) -> list[str]:
     sources: dict[str, tuple[Path, str]] = {
         # No union_by_name: binding it inspects every one of ~1,000 files and exhausted
         # 12.7 GB of memory. The 2022–2026 header audit (#2) found one identical header in
-        # every partition; #11 adds the schema contract check that enforces it.
+        # every partition; silver's schema contract check fails a season that breaks it.
         "bronze.statcast": (
             bronze / "part.csv.gz",
             "read_csv({}, all_varchar = true, header = true, hive_partitioning = true)",
         ),
         "bronze.manifest": (bronze / "_meta.json", "read_json_auto({})"),
         "silver.pitches": (silver.pitches("*"), "read_parquet({}, hive_partitioning = true)"),
-        "silver.dq_results": (
-            silver.dq_results("*"),
-            "read_parquet({}, hive_partitioning = true)",
-        ),
+        **{
+            # The files carry their own season column.
+            f"silver.{report}": (
+                silver.dq(report, "*"),
+                "read_parquet({}, hive_partitioning = false)",
+            )
+            for report in ("dq_results", "dq_null_rates", "dq_games")
+        },
     }
     views = {
         name: reader.format(quote_literal(pattern))

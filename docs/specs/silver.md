@@ -40,7 +40,7 @@ outcome classes) waits for gold.
 
 ### Schema contract: `src/stuffplus/silver/contract.py`
 
-The single source of truth for silver columns. Each entry holds name, DuckDB type, unit, group (`id`, `context`, `physics`, `location`, `outcome`, `savant_model`, `bat_tracking`), and the first season it is expected to be populated (Savant sends all 119 columns every season; seasons before a column existed send it empty, e.g. bat tracking in 2022). The build generates its `SELECT` cast list from the contract, so the column list isn't written twice. Gold's forbidden-column test can later reuse the groups.
+The single source of truth for silver columns. Each entry holds name, DuckDB type, unit, group (`id`, `context`, `physics`, `location`, `outcome`, `savant_model`, `bat_tracking`, `future` for the `*_days_until_next_game` leakage trap, `derived` for build-computed columns), and the first season it is expected to be populated (Savant sends all 119 columns every season; seasons before a column existed send it empty, e.g. bat tracking in 2022). The build generates its `SELECT` cast list from the contract, so the column list isn't written twice. Gold's forbidden-column test can later reuse the groups.
 
 - Measurements → `DOUBLE`, even ones that look like integers today (spin, axis, angles).
 - IDs and counts → `BIGINT` / `INTEGER`; codes → `VARCHAR`; `game_date` → `DATE`.
@@ -64,7 +64,7 @@ Each check is a SQL query returning violations, plus a severity.
 - `pitch_id` unique after collapsing exact duplicates. Conflicting duplicates (same key, different values) fail.
 - Every row has `game_type = 'R'`, and `game_date` matches its bronze partition.
 - Identifiers not null: `game_pk`, `at_bat_number`, `pitch_number`, `pitcher`, `batter`, `game_date`.
-- `description` is in the known vocabulary (the 15 values seen). A new value fails, because gold's outcome-class mapping must be updated deliberately.
+- `description` is in the known vocabulary (the 16 values seen 2022–2026; `swinging_pitchout` first appeared in 2026). A new value fails, because gold's outcome-class mapping must be updated deliberately.
 - **Schema contract:** each bronze file's header matches the schema contract. A missing expected column fails; a new, unknown column warns and is listed.
 - Deprecated columns are entirely null before they're dropped.
 - Row count: silver = bronze − exact duplicates.
@@ -78,8 +78,8 @@ Each check is a SQL query returning violations, plus a severity.
 
 **Outputs** (Parquet under `data/silver/dq/`, also exposed as views):
 - `dq_results`: check_name, season, severity, passed, metric, threshold, detail, audited_at (`check` is a SQL reserved word; a boolean `passed` is clearer than a status string; `audited_at` makes each audit's file unique by design)
-- `dq_null_rates`: season, month, column, null %
-- `dq_games`: game_pk, date, home team, pitches, spin coverage, flags
+- `dq_null_rates`: season, month, column_name, pitches_thrown, null_pct (pitches thrown only: automatic calls carry no physics)
+- `dq_games`: season, game_pk, game_date, home_team, pitches, pitches_thrown, spin_coverage, flags
 
 The CLI prints a summary and exits non-zero if any hard check fails.
 
@@ -107,7 +107,10 @@ src/stuffplus/silver/
   contract.py    schema contract: one entry per silver column (single source of truth)
   build.py       build_season(): bronze → staged parquet → audit → publish
   quality.py     check definitions + report writers
-  sql/pitches.sql  select/dedup template; cast list generated from schema.py
+  source.py      the season's bronze input: partitions, headers, lineage, bronze profile
+  layout.py      where silver files live
+  sql/pitches.sql  select/dedup template; cast list generated from contract.py
+  sql/bronze_profile.sql, sql/games.sql
 src/stuffplus/catalog.py   create/refresh data/stuff.duckdb views
 tests/test_silver_build.py, test_silver_quality.py, test_catalog.py
 ```

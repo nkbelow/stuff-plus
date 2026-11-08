@@ -2,26 +2,21 @@
 --
 -- Rendered by build.py; every column list below is generated from contract.py, so the
 -- output matches the schema contract exactly. Placeholders it fills:
---   casts           one strict CAST per source column (TRY_CAST would hide bad values)
+--   casts           one strict cast per source column: a value that doesn't fit its type
+--                   raises an error naming the column, value and partition date
+--   row_hash        the exact-duplicate hash, shared with bronze_profile.sql
+--   source          the season's bronze files joined to the lineage table
 --   source_columns  the source column names
 --   pitch_id        the key columns joined with '-'
 --   sort            the sort columns
 --   output_columns  every silver column, in contract order
---   data_files      the season's complete, non-empty bronze files
--- The `lineage` table (data_file, fetched_at) is created by build.py before this runs.
 
 WITH typed AS (
     SELECT
         {casts},
-        -- Exactness covers the whole bronze row, not just contract columns: two rows that
-        -- differ anywhere except the source filename are not duplicates of each other.
-        md5(to_json(struct_pack(*COLUMNS(raw.* EXCLUDE (filename))))::VARCHAR) AS bronze_row_hash,
+        {row_hash} AS bronze_row_hash,
         lineage.fetched_at AS bronze_fetched_at
-    FROM read_csv(
-        {data_files},
-        all_varchar = true, header = true, union_by_name = true, filename = true
-    ) AS raw
-    JOIN lineage ON raw.filename = lineage.data_file
+    FROM {source}
 ),
 
 -- Exact duplicates collapse, keeping the earliest fetch. Rows sharing a key but differing

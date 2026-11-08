@@ -1,26 +1,34 @@
 """The silver schema contract: one entry per column in a silver season file.
 
 Names and units are Savant's, unchanged (ADR 0006); units are recorded here, not converted.
-Groups classify columns for later layers (gold's leakage test forbids `OUTCOME` columns as
-features). The build generates its casts and its output column list from this module, and a
+Groups say when a value is known relative to the pitch, so later layers can classify
+columns: gold's leakage test forbids `OUTCOME`, `BAT_TRACKING` and `FUTURE` columns as
+features. The build generates its casts and its output column list from this module, and a
 test asserts every published file matches it exactly.
 
-`SOURCE_COLUMNS` are cast from bronze; `DERIVED_COLUMNS` are computed by the build. The
-catalog adds one more column, `season`, read from the partition path.
-
-This is the starter set for the tracer (#10). The full ~112-column contract arrives in #11.
+`SOURCE_COLUMNS` are cast from bronze, in Savant's header order; `DERIVED_COLUMNS` are
+computed by the build. The catalog adds one more column, `season`, read from the
+partition path. Types and first populated seasons were confirmed against 2022–2026 bronze
+(#11): every season sends all 119 columns, with columns that didn't exist yet left empty.
 """
 
 from dataclasses import dataclass
 from enum import StrEnum
 
+# The first season this project ingests; a column with this first_season is expected to
+# be populated in every season.
+FIRST_SEASON = 2022
+
 
 class Group(StrEnum):
-    ID = "id"
-    CONTEXT = "context"
-    SAVANT_MODEL = "savant_model"  # Savant's own classifications (pitch type)
-    OUTCOME = "outcome"
-    PHYSICS = "physics"
+    ID = "id"  # identifies the pitch or the pitcher/batter
+    CONTEXT = "context"  # the situation before the pitch: count, bases, score, fielders
+    SAVANT_MODEL = "savant_model"  # Savant's classification of the pitch (pitch type)
+    PHYSICS = "physics"  # how the ball left the hand and moved
+    LOCATION = "location"  # where it crossed the plate (command, not stuff)
+    OUTCOME = "outcome"  # what happened on or after the pitch
+    BAT_TRACKING = "bat_tracking"  # the hitter's swing (from mid-2023)
+    FUTURE = "future"  # known only after the game: a leakage trap, not an outcome
     DERIVED = "derived"  # computed by the silver build, not sent by Savant
 
 
@@ -29,43 +37,160 @@ class Column:
     name: str
     type: str  # DuckDB type
     group: Group
-    unit: str | None = None
+    unit: str | None = None  # None: a code, count, ID, probability or other unitless value
+    first_season: int = FIRST_SEASON  # first season Savant populates it
 
 
 # Savant's `pitch_number` is the pitch's position within the plate appearance, so the
 # three together identify a pitch within a game; `pitch_id` joins them with '-'.
 KEY_COLUMNS = ("game_pk", "at_bat_number", "pitch_number")
 SORT_COLUMNS = ("game_date", *KEY_COLUMNS)
+IDENTIFIER_COLUMNS = (*KEY_COLUMNS, "pitcher", "batter", "game_date")
 
+# Types: measurements are DOUBLE even where every value seen is whole (spin, axis, launch
+# angle, distance), so a decimal on some later date can't change the type. IDs are BIGINT,
+# counts and codes INTEGER, labels VARCHAR. Positions and movement are in the catcher's
+# view: x is positive toward first base.
+BAT_TRACKING_FROM = 2023  # Savant's bat tracking starts 2023-07-14
+
+_G = Group
 SOURCE_COLUMNS: tuple[Column, ...] = (
-    Column("game_pk", "BIGINT", Group.ID),
-    Column("at_bat_number", "INTEGER", Group.ID),
-    Column("pitch_number", "INTEGER", Group.ID),
-    Column("pitcher", "BIGINT", Group.ID),
-    Column("batter", "BIGINT", Group.ID),
-    Column("game_date", "DATE", Group.CONTEXT),
-    Column("game_type", "VARCHAR", Group.CONTEXT),
-    Column("home_team", "VARCHAR", Group.CONTEXT),
-    Column("away_team", "VARCHAR", Group.CONTEXT),
-    Column("p_throws", "VARCHAR", Group.CONTEXT),
-    Column("stand", "VARCHAR", Group.CONTEXT),
-    Column("balls", "INTEGER", Group.CONTEXT),
-    Column("strikes", "INTEGER", Group.CONTEXT),
-    Column("pitch_type", "VARCHAR", Group.SAVANT_MODEL),
-    Column("description", "VARCHAR", Group.OUTCOME),
-    Column("type", "VARCHAR", Group.OUTCOME),
-    Column("events", "VARCHAR", Group.OUTCOME),
-    # Measurements are DOUBLE even where today's values look integral (spin, axis):
-    # a decimal on some later date must not change the type.
-    Column("release_speed", "DOUBLE", Group.PHYSICS, unit="mph"),
-    Column("release_spin_rate", "DOUBLE", Group.PHYSICS, unit="rpm"),
-    Column("spin_axis", "DOUBLE", Group.PHYSICS, unit="deg"),
-    Column("pfx_x", "DOUBLE", Group.PHYSICS, unit="ft"),  # catcher's perspective
-    Column("pfx_z", "DOUBLE", Group.PHYSICS, unit="ft"),
-    Column("release_pos_x", "DOUBLE", Group.PHYSICS, unit="ft"),  # catcher's perspective
-    Column("release_pos_z", "DOUBLE", Group.PHYSICS, unit="ft"),
-    Column("release_extension", "DOUBLE", Group.PHYSICS, unit="ft"),
-    Column("arm_angle", "DOUBLE", Group.PHYSICS, unit="deg"),
+    Column("pitch_type", "VARCHAR", _G.SAVANT_MODEL),
+    Column("game_date", "DATE", _G.CONTEXT),
+    Column("release_speed", "DOUBLE", _G.PHYSICS, "mph"),
+    Column("release_pos_x", "DOUBLE", _G.PHYSICS, "ft"),
+    Column("release_pos_z", "DOUBLE", _G.PHYSICS, "ft"),
+    Column("player_name", "VARCHAR", _G.ID),  # the pitcher, "Last, First"
+    Column("batter", "BIGINT", _G.ID),
+    Column("pitcher", "BIGINT", _G.ID),
+    Column("events", "VARCHAR", _G.OUTCOME),  # plate appearance result, on its last pitch
+    Column("description", "VARCHAR", _G.OUTCOME),  # pitch result; vocabulary below
+    Column("zone", "INTEGER", _G.LOCATION),  # 1–9 in the zone, 11–14 outside
+    Column("des", "VARCHAR", _G.OUTCOME),  # play-by-play text
+    Column("game_type", "VARCHAR", _G.CONTEXT),
+    Column("stand", "VARCHAR", _G.CONTEXT),
+    Column("p_throws", "VARCHAR", _G.CONTEXT),
+    Column("home_team", "VARCHAR", _G.CONTEXT),
+    Column("away_team", "VARCHAR", _G.CONTEXT),
+    Column("type", "VARCHAR", _G.OUTCOME),  # B ball, S strike, X in play
+    Column("hit_location", "INTEGER", _G.OUTCOME),  # fielder position 1–9
+    Column("bb_type", "VARCHAR", _G.OUTCOME),
+    Column("balls", "INTEGER", _G.CONTEXT),
+    Column("strikes", "INTEGER", _G.CONTEXT),
+    Column("game_year", "INTEGER", _G.CONTEXT),
+    Column("pfx_x", "DOUBLE", _G.PHYSICS, "ft"),  # movement vs. a spinless ball
+    Column("pfx_z", "DOUBLE", _G.PHYSICS, "ft"),
+    Column("plate_x", "DOUBLE", _G.LOCATION, "ft"),  # mid-plate from 2026, front before
+    Column("plate_z", "DOUBLE", _G.LOCATION, "ft"),
+    Column("on_3b", "BIGINT", _G.CONTEXT),  # runner's player ID, empty if base open
+    Column("on_2b", "BIGINT", _G.CONTEXT),
+    Column("on_1b", "BIGINT", _G.CONTEXT),
+    Column("outs_when_up", "INTEGER", _G.CONTEXT),
+    Column("inning", "INTEGER", _G.CONTEXT),
+    Column("inning_topbot", "VARCHAR", _G.CONTEXT),
+    Column("hc_x", "DOUBLE", _G.OUTCOME, "px"),  # spray chart image coordinates
+    Column("hc_y", "DOUBLE", _G.OUTCOME, "px"),
+    # Trajectory fit at y = 50 ft from home plate.
+    Column("vx0", "DOUBLE", _G.PHYSICS, "ft/s"),
+    Column("vy0", "DOUBLE", _G.PHYSICS, "ft/s"),
+    Column("vz0", "DOUBLE", _G.PHYSICS, "ft/s"),
+    Column("ax", "DOUBLE", _G.PHYSICS, "ft/s^2"),
+    Column("ay", "DOUBLE", _G.PHYSICS, "ft/s^2"),
+    Column("az", "DOUBLE", _G.PHYSICS, "ft/s^2"),
+    Column("sz_top", "DOUBLE", _G.LOCATION, "ft"),  # ABS-defined from 2026
+    Column("sz_bot", "DOUBLE", _G.LOCATION, "ft"),
+    Column("hit_distance_sc", "DOUBLE", _G.OUTCOME, "ft"),
+    Column("launch_speed", "DOUBLE", _G.OUTCOME, "mph"),
+    Column("launch_angle", "DOUBLE", _G.OUTCOME, "deg"),
+    Column("effective_speed", "DOUBLE", _G.PHYSICS, "mph"),  # velocity adjusted for extension
+    Column("release_spin_rate", "DOUBLE", _G.PHYSICS, "rpm"),
+    Column("release_extension", "DOUBLE", _G.PHYSICS, "ft"),
+    Column("game_pk", "BIGINT", _G.ID),
+    *(Column(f"fielder_{n}", "BIGINT", _G.CONTEXT) for n in range(2, 10)),  # 2 is the catcher
+    Column("release_pos_y", "DOUBLE", _G.PHYSICS, "ft"),
+    Column("estimated_ba_using_speedangle", "DOUBLE", _G.OUTCOME),
+    Column("estimated_woba_using_speedangle", "DOUBLE", _G.OUTCOME),
+    Column("woba_value", "DOUBLE", _G.OUTCOME),
+    Column("woba_denom", "INTEGER", _G.OUTCOME),
+    Column("babip_value", "INTEGER", _G.OUTCOME),
+    Column("iso_value", "INTEGER", _G.OUTCOME),
+    Column("launch_speed_angle", "INTEGER", _G.OUTCOME),  # contact quality code 1–6
+    Column("at_bat_number", "INTEGER", _G.ID),
+    Column("pitch_number", "INTEGER", _G.ID),
+    Column("pitch_name", "VARCHAR", _G.SAVANT_MODEL),
+    Column("home_score", "INTEGER", _G.CONTEXT),
+    Column("away_score", "INTEGER", _G.CONTEXT),
+    Column("bat_score", "INTEGER", _G.CONTEXT),
+    Column("fld_score", "INTEGER", _G.CONTEXT),
+    Column("post_away_score", "INTEGER", _G.OUTCOME),
+    Column("post_home_score", "INTEGER", _G.OUTCOME),
+    Column("post_bat_score", "INTEGER", _G.OUTCOME),
+    Column("post_fld_score", "INTEGER", _G.OUTCOME),
+    Column("if_fielding_alignment", "VARCHAR", _G.CONTEXT),
+    Column("of_fielding_alignment", "VARCHAR", _G.CONTEXT),
+    Column("spin_axis", "DOUBLE", _G.PHYSICS, "deg"),
+    Column("delta_home_win_exp", "DOUBLE", _G.OUTCOME),
+    Column("delta_run_exp", "DOUBLE", _G.OUTCOME, "runs"),
+    Column("bat_speed", "DOUBLE", _G.BAT_TRACKING, "mph", BAT_TRACKING_FROM),
+    Column("swing_length", "DOUBLE", _G.BAT_TRACKING, "ft", BAT_TRACKING_FROM),
+    # Inches, inferred from the distribution (2024 median 1.5, 99th percentile 18).
+    Column("miss_distance", "DOUBLE", _G.BAT_TRACKING, "in", BAT_TRACKING_FROM),
+    Column("estimated_slg_using_speedangle", "DOUBLE", _G.OUTCOME),
+    Column("delta_pitcher_run_exp", "DOUBLE", _G.OUTCOME, "runs"),
+    Column("hyper_speed", "DOUBLE", _G.OUTCOME, "mph"),  # adjusted exit velocity
+    Column("home_score_diff", "INTEGER", _G.CONTEXT),
+    Column("bat_score_diff", "INTEGER", _G.CONTEXT),
+    # Before the pitch: this pitch's value plus its delta is the next pitch's value
+    # (99.9% of 2024 pitches), so these are situation, not outcome.
+    Column("home_win_exp", "DOUBLE", _G.CONTEXT),
+    Column("bat_win_exp", "DOUBLE", _G.CONTEXT),
+    Column("age_pit_legacy", "INTEGER", _G.CONTEXT, "years"),
+    Column("age_bat_legacy", "INTEGER", _G.CONTEXT, "years"),
+    Column("age_pit", "INTEGER", _G.CONTEXT, "years"),
+    Column("age_bat", "INTEGER", _G.CONTEXT, "years"),
+    Column("n_thruorder_pitcher", "INTEGER", _G.CONTEXT),  # times through the order
+    Column("n_priorpa_thisgame_player_at_bat", "INTEGER", _G.CONTEXT),
+    Column("pitcher_days_since_prev_game", "INTEGER", _G.CONTEXT, "days"),
+    Column("batter_days_since_prev_game", "INTEGER", _G.CONTEXT, "days"),
+    Column("pitcher_days_until_next_game", "INTEGER", _G.FUTURE, "days"),
+    Column("batter_days_until_next_game", "INTEGER", _G.FUTURE, "days"),
+    # Feet despite the name "break": api_break_x_arm averages 0.64 on 2024 four-seamers,
+    # |pfx_x| 0.65. _arm is arm side positive; _batter_in is toward the batter positive.
+    Column("api_break_z_with_gravity", "DOUBLE", _G.PHYSICS, "ft"),
+    Column("api_break_x_arm", "DOUBLE", _G.PHYSICS, "ft"),
+    Column("api_break_x_batter_in", "DOUBLE", _G.PHYSICS, "ft"),
+    Column("arm_angle", "DOUBLE", _G.PHYSICS, "deg"),
+    Column("attack_angle", "DOUBLE", _G.BAT_TRACKING, "deg", BAT_TRACKING_FROM),
+    Column("attack_direction", "DOUBLE", _G.BAT_TRACKING, "deg", BAT_TRACKING_FROM),
+    Column("swing_path_tilt", "DOUBLE", _G.BAT_TRACKING, "deg", BAT_TRACKING_FROM),
+    Column(
+        "intercept_ball_minus_batter_pos_x_inches",
+        "DOUBLE",
+        _G.BAT_TRACKING,
+        "in",
+        BAT_TRACKING_FROM,
+    ),
+    Column(
+        "intercept_ball_minus_batter_pos_y_inches",
+        "DOUBLE",
+        _G.BAT_TRACKING,
+        "in",
+        BAT_TRACKING_FROM,
+    ),
+)
+
+# Sent by Savant but empty in every season 2022–2026 (the pre-Statcast tracking system).
+# The audit confirms they are still empty, then the build drops them. A file without them
+# is fine: they aren't expected.
+DEPRECATED_COLUMNS = (
+    "spin_dir",
+    "spin_rate_deprecated",
+    "break_angle_deprecated",
+    "break_length_deprecated",
+    "tfs_deprecated",
+    "tfs_zulu_deprecated",
+    "umpire",
+    "sv_id",
 )
 
 DERIVED_COLUMNS: tuple[Column, ...] = (
@@ -75,3 +200,29 @@ DERIVED_COLUMNS: tuple[Column, ...] = (
 
 # Column order in a published silver file.
 SILVER_COLUMNS: tuple[Column, ...] = (DERIVED_COLUMNS[0], *SOURCE_COLUMNS, DERIVED_COLUMNS[1])
+
+# Every `description` Savant sends, with the `type` (B/S/X) it implies. A value outside this
+# vocabulary blocks publishing: gold's outcome classes must be extended deliberately.
+# swinging_pitchout first appeared in 2026 (one pitch, 2026-05-09).
+DESCRIPTION_TYPES: dict[str, str] = {
+    "ball": "B",
+    "blocked_ball": "B",
+    "hit_by_pitch": "B",
+    "automatic_ball": "B",
+    "pitchout": "B",
+    "called_strike": "S",
+    "swinging_strike": "S",
+    "swinging_strike_blocked": "S",
+    "foul": "S",
+    "foul_tip": "S",
+    "foul_bunt": "S",
+    "bunt_foul_tip": "S",
+    "missed_bunt": "S",
+    "automatic_strike": "S",
+    "swinging_pitchout": "S",
+    "hit_into_play": "X",
+}
+
+# Pitch-clock violations: a ball or strike is added to the count and no pitch is thrown, so
+# these rows mostly have no physics or pitch type.
+AUTOMATIC_CALLS = ("automatic_ball", "automatic_strike")

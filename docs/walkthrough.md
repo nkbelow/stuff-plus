@@ -15,9 +15,9 @@ Flow: **raw pitches → cleaned pitches → label + features per pitch → model
 
 ## 2. Silver — clean pitches
 
-- DuckDB SQL: typed columns, `game_type='R'`, `pitch_id = game_pk-at_bat_number-pitch_number` (unique, tested), dedupe on latest fetch, pfx feet→inches.
-- **Facts only.** No mirroring or features — those are modeling choices and live in gold.
-- DQ report per season × month: null rates, range checks (velo 55–106, spin 500–3800, ext 4–8.5), pitches/game ~250–350, unknown pitch types. Per-month so park/tracking outages don't hide in season averages.
+- DuckDB SQL, write–audit–publish: all 111 live Savant columns with strict types from the schema contract, Savant's names and units unchanged (ADR 0006), `pitch_id = game_pk-at_bat_number-pitch_number` (unique, checked), exact duplicates collapsed, `game_type='R'` asserted rather than filtered.
+- **Facts only.** No mirroring, unit conversion or features: those are modeling choices and live in gold.
+- Hard checks block publishing (schema contract, unknown `description`, row reconciliation against bronze, …). Warn checks report: null rates by month, per-game spin coverage (tracking outages are whole games), ranges, pitches per game. Spec: [`specs/silver.md`](specs/silver.md).
 
 ## 3. EDA notebook — each question feeds a decision
 
