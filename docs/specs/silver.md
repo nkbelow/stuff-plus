@@ -40,7 +40,7 @@ outcome classes) waits for gold.
 
 ### Schema registry: `src/stuffplus/silver/schema.py`
 
-The single source of truth for silver columns. Each entry holds name, DuckDB type, unit, group (`id`, `context`, `physics`, `location`, `outcome`, `savant_model`, `bat_tracking`), and whether it may be missing. The build generates its `SELECT` cast list from the registry, so the column list isn't written twice. Gold's forbidden-column test can later reuse the groups.
+The single source of truth for silver columns. Each entry holds name, DuckDB type, unit, group (`id`, `context`, `physics`, `location`, `outcome`, `savant_model`, `bat_tracking`), and the first season it is expected to be populated (Savant sends all 119 columns every season; seasons before a column existed send it empty, e.g. bat tracking in 2022). The build generates its `SELECT` cast list from the registry, so the column list isn't written twice. Gold's forbidden-column test can later reuse the groups.
 
 - Measurements → `DOUBLE`, even ones that look like integers today (spin, axis, angles).
 - IDs and counts → `BIGINT` / `INTEGER`; codes → `VARCHAR`; `game_date` → `DATE`.
@@ -114,21 +114,11 @@ tests/test_silver_build.py, test_silver_quality.py, test_catalog.py
 
 ## Tasks
 
-| # | Task | Done when | Est. |
-|---|---|---|---|
-| 0 | **Full 2022–2026 backfill in the background** (~1,000 requests, ~80 min) | `stuff ingest status` shows 5 seasons, 0 failures; `schemas` count per season recorded | 0.25 h (mostly waiting) |
-| 1 | Header audit across all seasons → schema registry | Registry covers every non-deprecated column; drift between seasons (e.g. bat tracking appearing in 2024) documented in the registry | 1.5 h |
-| 2 | Build SQL + staging + atomic publish | Builds 2024 April; output deterministic (same bytes on rebuild); test: a failing audit leaves the previous season untouched | 2 h |
-| 3 | Hard and warn checks + report tables | Each check has a fixture test that passes clean data and catches a seeded violation | 2 h |
-| 4 | Catalog DB + CLI commands | `SELECT count(*) FROM silver.pitches` works from a fresh `stuff catalog refresh` | 0.75 h |
-| 5 | Build all seasons; read the DQ report | All seasons publish; outage games and new descriptions reviewed; findings added to CLAUDE.md gotchas and to the closing comment on this issue | 1 h |
-| 6 | `/code-review` against this note, then commit | Review findings resolved or explicitly deferred | 0.5 h |
-
-**Total ≈ 8 h.** Next after silver: the EDA notebook (walkthrough §3).
+Tracked as sub-issues of [#1](https://github.com/nkbelow/stuff-plus/issues/1), cut as vertical slices by `/to-tickets` with native blocking links. The full 2022–2026 backfill is [#2](https://github.com/nkbelow/stuff-plus/issues/2). Estimated total ≈ 8 h. Next after silver: the EDA notebook (walkthrough §3).
 
 ## Acceptance criteria
 
-- `stuff silver build` publishes every season with zero hard failures. Re-running produces byte-identical Parquet.
+- `stuff silver build` publishes every season with zero hard failures. Re-running produces identical content: the same rows and the same hash of the sorted data. (Byte-identical files aren't required: DuckDB writes its version into Parquet metadata, and thread count can change row-group layout.)
 - Silver row count per season = bronze rows − exact duplicates, reconciled in `dq_results`.
 - Known findings show up where expected: the three April 2024 spin-outage games appear in `dq_games`; automatic calls are counted; catcher interference is the only description/type exception.
 - All tests pass offline; ruff passes.
@@ -142,6 +132,6 @@ tests/test_silver_build.py, test_silver_quality.py, test_catalog.py
 
 ## Risks and unknowns
 
-- Older seasons may have different headers (bat tracking began mid-2023/2024; `arm_angle` coverage pre-2024). The registry marks such columns as allowed-missing by season.
+- Columns that only became populated in later seasons (bat tracking; possibly others in 2023, 2025, 2026). The registry records the first expected season, and a warn check flags a column that is empty when it should be populated. Confirmed on [#3](https://github.com/nkbelow/stuff-plus/issues/3) for 2022 and 2024.
 - Savant may reclassify pitch types between our download and a later re-download. `bronze_fetched_at` lineage makes that diagnosable.
 - Full-season files are ~100–150 MB of Parquet each (estimate). Fine locally; worth confirming.

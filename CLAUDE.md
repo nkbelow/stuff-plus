@@ -14,9 +14,16 @@ data-engineering terms with a baseball example alongside the code.
   records the results (key numbers, surprises, follow-ups).
 - **Coding standards:** `CODING_STANDARDS.md`. Read it before writing or reviewing code.
   It is the single source for the leakage rules and forbidden feature columns.
-- **Spec for `/code-review`:** `docs/specs/<milestone>.md` (silver: `docs/specs/silver.md`);
-  otherwise the milestone's section of `docs/plan.md`.
+- **Spec for `/code-review`:** the milestone's parent GitHub issue. Silver predates this:
+  its spec is `docs/specs/silver.md`, linked from #1.
 - **Commands:** `uv run stuff --help`.
+
+## Workflow
+
+Each milestone runs the skills' main flow: `/grill-with-docs` → `/to-spec` (parent issue)
+→ `/to-tickets` (sub-issues with blocking links) → `/implement #N` per ticket → `/pr` →
+`/retro`. Milestone work lives on one branch named for the milestone (`silver`, `labels`);
+each commit references its ticket (`Closes #N`), which is how `/code-review` finds the spec.
 
 ## Guardrails
 
