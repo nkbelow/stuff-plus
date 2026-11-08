@@ -1,0 +1,39 @@
+[project]
+name = "stuffplus"
+version = "0.1.0"
+description = "Custom Stuff+-style pitch quality model from Statcast data."
+readme = "README.md"
+authors = [
+    { name = "Nick", email = "nkbelow@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=2.0.0,<3",
+    "httpx>=0.28.1",
+    "pydantic>=2.14.3",
+    "pyyaml>=6.0.3",
+    "typer>=0.28.0",
+]
+
+[project.scripts]
+stuff = "stuffplus.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+crosscheck = [
+    "pybaseball>=2.2.7",
+]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

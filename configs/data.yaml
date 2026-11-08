@@ -1,0 +1,26 @@
+# Data locations and ingestion settings.
+#
+# Relative paths resolve against the repo root (the parent of this configs/ dir).
+
+data_root: data
+
+# Fetch windows per season. Deliberately wider than the actual regular season
+# (international openers have been as early as Mar 18); requests are filtered
+# to regular-season games, so off-days and non-season dates return header-only
+# CSVs and cost one cheap request each.
+seasons:
+  2022: {start: 2022-03-15, end: 2022-10-06}
+  2023: {start: 2023-03-15, end: 2023-10-06}
+  2024: {start: 2024-03-15, end: 2024-10-06}
+  2025: {start: 2025-03-15, end: 2025-10-06}
+  2026: {start: 2026-03-15, end: 2026-10-06}
+
+savant:
+  base_url: https://baseballsavant.mlb.com/statcast_search/csv
+  timeout_s: 120
+  max_retries: 5
+  backoff_s: 2.0
+  # Minimum seconds between request starts. Savant takes ~5 s per day anyway;
+  # this just keeps us polite if responses come back from cache.
+  min_interval_s: 1.0
+  user_agent: stuff-plus/0.1 (personal research project)
