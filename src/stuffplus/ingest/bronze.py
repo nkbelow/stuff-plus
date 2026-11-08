@@ -20,9 +20,11 @@ import os
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
+from stuffplus.fs import atomic_path
 from stuffplus.ingest.savant import FETCHER_VERSION, FetchResult, SavantClient, SavantError
 
 DATA_FILE = "part.csv.gz"
@@ -34,10 +36,16 @@ def partition_dir(bronze_dir: Path, game_date: dt.date) -> Path:
 
 
 def is_complete(part_dir: Path) -> bool:
+    return _complete_meta(part_dir) is not None
+
+
+def _complete_meta(part_dir: Path) -> dict[str, Any] | None:
+    """The partition's metadata if it is complete, else None."""
     meta = part_dir / META_FILE
     if not meta.exists() or not (part_dir / DATA_FILE).exists():
-        return False
-    return json.loads(meta.read_text()).get("status") == "ok"
+        return None
+    parsed: dict[str, Any] = json.loads(meta.read_text())
+    return parsed if parsed.get("status") == "ok" else None
 
 
 @dataclass(frozen=True)
@@ -54,9 +62,9 @@ def complete_partitions(bronze_dir: Path, season: int) -> list[Partition]:
     """A season's complete partitions in date order. Incomplete ones are skipped."""
     partitions = []
     for part_dir in sorted((bronze_dir / f"season={season}").glob("game_date=*")):
-        if not is_complete(part_dir):
+        meta = _complete_meta(part_dir)
+        if meta is None:
             continue
-        meta = json.loads((part_dir / META_FILE).read_text())
         partitions.append(
             Partition(
                 game_date=dt.date.fromisoformat(meta["game_date"]),
@@ -74,15 +82,13 @@ def seasons(bronze_dir: Path) -> list[int]:
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
-    tmp = path.with_name(f".{path.name}.tmp")
-    with open(tmp, "wb") as f:
+    with atomic_path(path) as tmp, open(tmp, "wb") as f:
         f.write(data)
         f.flush()
         os.fsync(f.fileno())
-    os.replace(tmp, path)
 
 
-def write_partition(bronze_dir: Path, result: FetchResult) -> dict:
+def write_partition(bronze_dir: Path, result: FetchResult) -> dict[str, Any]:
     """Persist one fetch. Returns the metadata written."""
     part_dir = partition_dir(bronze_dir, result.game_date)
     part_dir.mkdir(parents=True, exist_ok=True)

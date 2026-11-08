@@ -58,6 +58,7 @@ def backfill(
     if season:
         dates = [d for s in season for d in cfg.season_dates(s)]
     else:
+        assert start is not None  # guaranteed by the either/or check above
         dates = date_range(start, end or start)
 
     with SavantClient(cfg.savant) as client:
@@ -94,9 +95,14 @@ def build(
     """Build, audit and publish silver seasons, then refresh the catalog."""
     cfg = load_data_config(config)
     summary = build_seasons(cfg, season or seasons(cfg.bronze_dir))
+    # Two library calls (CODING_STANDARDS §2.5 allows a commented deviation): the catalog
+    # refresh is what makes newly published seasons queryable by name, so a build that
+    # skipped it would leave the catalog describing yesterday's files.
     refresh_catalog(cfg)
     typer.echo(f"Published {len(summary.built)} season(s); failed {len(summary.failed)}.")
     if summary.failed:
+        for failed_season, err in summary.failed.items():
+            typer.echo(f"  FAILED {failed_season}: {err}", err=True)
         raise typer.Exit(code=1)
 
 

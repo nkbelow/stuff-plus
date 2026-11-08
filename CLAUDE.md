@@ -31,7 +31,8 @@ each commit references its ticket (`Closes #N`), which is how `/code-review` fin
   (pitcher level). 2026 metrics come only from the final experiment config, run once.
 - **Savant is a free public service, and each request takes ~5 s.** Agree backfills
   longer than a month with Nick before running them.
-- **Done** means `uv run pytest` and `uv run ruff check .` pass.
+- **Done** means `uv run pytest`, `uv run ruff check .` and `uv run mypy` pass (mypy is strict
+  for `src/`; tests may leave helpers unannotated).
 
 ## Gotchas (verified 2026-11-07)
 

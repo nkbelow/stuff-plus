@@ -77,7 +77,7 @@ Each check is a SQL query returning violations, plus a severity.
 - `hit_into_play` without `launch_speed`; `pitch_type` null outside automatic calls.
 
 **Outputs** (Parquet under `data/silver/dq/`, also exposed as views):
-- `dq_results`: check, season, severity, status, metric, threshold, detail
+- `dq_results`: check_name, season, severity, passed, metric, threshold, detail, audited_at (`check` is a SQL reserved word; a boolean `passed` is clearer than a status string; `audited_at` makes each audit's file unique by design)
 - `dq_null_rates`: season, month, column, null %
 - `dq_games`: game_pk, date, home team, pitches, spin coverage, flags
 

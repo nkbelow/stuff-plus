@@ -3,7 +3,6 @@ import gzip
 import json
 
 import httpx
-from conftest import GAME_DATE, pitch, savant_csv
 
 from stuffplus.ingest.bronze import (
     DATA_FILE,
@@ -14,6 +13,7 @@ from stuffplus.ingest.bronze import (
     partition_dir,
     season_summary,
 )
+from tests.conftest import GAME_DATE, pitch, savant_csv
 
 NEXT_DAY = GAME_DATE + dt.timedelta(days=1)
 
@@ -89,15 +89,20 @@ def test_data_without_meta_is_incomplete(tmp_path, make_client):
 def test_manifest_reads_all_partitions(tmp_path, make_client):
     assert manifest(tmp_path) is None
     backfill(_client(make_client, [ok(rows=3), ok(rows=0)]), tmp_path, [GAME_DATE, NEXT_DAY])
-    rows = manifest(tmp_path).query("m", "SELECT sum(rows), count(*) FROM m").fetchall()[0]
-    assert rows == (3, 2)
+    rel = manifest(tmp_path)
+    assert rel is not None
+    summed = rel.query("m", "SELECT sum(rows), count(*) FROM m")
+    assert summed is not None
+    assert summed.fetchall()[0] == (3, 2)
 
 
 def test_season_summary_counts_game_days_and_schemas(tmp_path, make_client):
     assert season_summary(tmp_path) is None
     responses = [ok(rows=3), ok(rows=0, game_date=NEXT_DAY)]
     backfill(_client(make_client, responses), tmp_path, [GAME_DATE, NEXT_DAY])
-    row = season_summary(tmp_path).fetchall()[0]
+    summary = season_summary(tmp_path)
+    assert summary is not None
+    row = summary.fetchall()[0]
     season, dates, game_days, pitches, dupes, schemas, first_game, last_game = row
     assert (season, dates, game_days, pitches, dupes, schemas) == (2024, 2, 1, 3, 0, 1)
     assert first_game == last_game == GAME_DATE

@@ -4,10 +4,10 @@ from pathlib import Path
 import httpx
 import pytest
 
-from stuffplus.config import SavantConfig
+from stuffplus.config import DataConfig, SavantConfig, SeasonWindow
 from stuffplus.ingest.bronze import write_partition
 from stuffplus.ingest.savant import FetchResult, SavantClient, validate_csv
-from stuffplus.silver.contract import SILVER_COLUMNS
+from stuffplus.silver.contract import SOURCE_COLUMNS
 
 HEADER = [
     "pitch_type",
@@ -77,7 +77,7 @@ def make_client():
     return _make
 
 
-SILVER_FIXTURE_HEADER = [c.name for c in SILVER_COLUMNS] + ["des"]
+SILVER_FIXTURE_HEADER = [c.name for c in SOURCE_COLUMNS] + ["des"]
 
 
 def silver_pitch(n: int, game_date: dt.date = GAME_DATE, **overrides: str) -> dict[str, str]:
@@ -136,4 +136,13 @@ def write_bronze(
             columns=columns,
             duplicate_keys=dupes,
         ),
+    )
+
+
+@pytest.fixture
+def cfg(tmp_path: Path) -> DataConfig:
+    """A data config rooted in a temp dir, for tests that build layers on disk."""
+    return DataConfig(
+        data_root=tmp_path,
+        seasons={2024: SeasonWindow(start=dt.date(2024, 3, 15), end=dt.date(2024, 10, 6))},
     )

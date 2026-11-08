@@ -1,28 +1,18 @@
-import datetime as dt
-
 import duckdb
-import pytest
-from conftest import GAME_DATE, silver_pitch, write_bronze
 
 from stuffplus.catalog import refresh_catalog
-from stuffplus.config import DataConfig, SeasonWindow
+from stuffplus.config import DataConfig
 from stuffplus.silver.build import build_season
+from tests.conftest import GAME_DATE, silver_pitch, write_bronze
 
 
-@pytest.fixture
-def cfg(tmp_path):
-    return DataConfig(
-        data_root=tmp_path,
-        seasons={2024: SeasonWindow(start=dt.date(2024, 3, 15), end=dt.date(2024, 10, 6))},
-    )
-
-
-def tables(cfg):
+def tables(cfg: DataConfig) -> list[tuple[str, str]]:
     with duckdb.connect(str(cfg.catalog_path), read_only=True) as con:
-        return con.execute(
+        rows = con.execute(
             "SELECT table_schema || '.' || table_name, table_type FROM information_schema.tables "
             "ORDER BY 1"
         ).fetchall()
+    return [(name, kind) for name, kind in rows]
 
 
 def test_catalog_names_silver_and_bronze_as_views_only(cfg):

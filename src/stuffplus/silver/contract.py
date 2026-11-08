@@ -1,8 +1,12 @@
-"""The silver schema contract: one entry per silver column, the single source of truth.
+"""The silver schema contract: one entry per column in a silver season file.
 
 Names and units are Savant's, unchanged (ADR 0006); units are recorded here, not converted.
-The build generates its casts from this list, and later layers read the groups (gold's
-leakage test forbids `OUTCOME` columns as features).
+Groups classify columns for later layers (gold's leakage test forbids `OUTCOME` columns as
+features). The build generates its casts and its output column list from this module, and a
+test asserts every published file matches it exactly.
+
+`SOURCE_COLUMNS` are cast from bronze; `DERIVED_COLUMNS` are computed by the build. The
+catalog adds one more column, `season`, read from the partition path.
 
 This is the starter set for the tracer (#10). The full ~112-column contract arrives in #11.
 """
@@ -17,6 +21,7 @@ class Group(StrEnum):
     SAVANT_MODEL = "savant_model"  # Savant's own classifications (pitch type)
     OUTCOME = "outcome"
     PHYSICS = "physics"
+    DERIVED = "derived"  # computed by the silver build, not sent by Savant
 
 
 @dataclass(frozen=True)
@@ -28,10 +33,11 @@ class Column:
 
 
 # Savant's `pitch_number` is the pitch's position within the plate appearance, so the
-# three together identify a pitch within a game; `pitch_id` is built from them.
+# three together identify a pitch within a game; `pitch_id` joins them with '-'.
 KEY_COLUMNS = ("game_pk", "at_bat_number", "pitch_number")
+SORT_COLUMNS = ("game_date", *KEY_COLUMNS)
 
-SILVER_COLUMNS: tuple[Column, ...] = (
+SOURCE_COLUMNS: tuple[Column, ...] = (
     Column("game_pk", "BIGINT", Group.ID),
     Column("at_bat_number", "INTEGER", Group.ID),
     Column("pitch_number", "INTEGER", Group.ID),
@@ -61,3 +67,11 @@ SILVER_COLUMNS: tuple[Column, ...] = (
     Column("release_extension", "DOUBLE", Group.PHYSICS, unit="ft"),
     Column("arm_angle", "DOUBLE", Group.PHYSICS, unit="deg"),
 )
+
+DERIVED_COLUMNS: tuple[Column, ...] = (
+    Column("pitch_id", "VARCHAR", Group.DERIVED),
+    Column("bronze_fetched_at", "TIMESTAMP WITH TIME ZONE", Group.DERIVED),
+)
+
+# Column order in a published silver file.
+SILVER_COLUMNS: tuple[Column, ...] = (DERIVED_COLUMNS[0], *SOURCE_COLUMNS, DERIVED_COLUMNS[1])

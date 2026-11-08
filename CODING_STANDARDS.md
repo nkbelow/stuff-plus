@@ -97,8 +97,9 @@ information about the outcome, or about the future, reaching training or evaluat
 
 ## 6. Code beyond ruff
 
-1. Type hints on every public function signature. (Python 3.14 evaluates annotations lazily,
-   so `from __future__ import annotations` isn't needed.)
+1. Type hints on every function in `src/`, enforced by `mypy --strict` (see `pyproject.toml`).
+   Python 3.14 evaluates annotations lazily, so `from __future__ import annotations` isn't
+   needed.
 2. Modules that do I/O open with a docstring stating their purpose and failure semantics.
 3. Comments explain *why*: the baseball, Savant, or statistical reason. The code
    already says *what*.
