@@ -40,6 +40,39 @@ def is_complete(part_dir: Path) -> bool:
     return json.loads(meta.read_text()).get("status") == "ok"
 
 
+@dataclass(frozen=True)
+class Partition:
+    """One complete game-date partition, as downstream layers see it."""
+
+    game_date: dt.date
+    data_file: Path
+    rows: int
+    fetched_at: dt.datetime
+
+
+def complete_partitions(bronze_dir: Path, season: int) -> list[Partition]:
+    """A season's complete partitions in date order. Incomplete ones are skipped."""
+    partitions = []
+    for part_dir in sorted((bronze_dir / f"season={season}").glob("game_date=*")):
+        if not is_complete(part_dir):
+            continue
+        meta = json.loads((part_dir / META_FILE).read_text())
+        partitions.append(
+            Partition(
+                game_date=dt.date.fromisoformat(meta["game_date"]),
+                data_file=part_dir / DATA_FILE,
+                rows=meta["rows"],
+                fetched_at=dt.datetime.fromisoformat(meta["fetched_at"]),
+            )
+        )
+    return partitions
+
+
+def seasons(bronze_dir: Path) -> list[int]:
+    """Seasons with at least one bronze partition directory."""
+    return sorted(int(p.name.removeprefix("season=")) for p in bronze_dir.glob("season=*"))
+
+
 def _atomic_write(path: Path, data: bytes) -> None:
     tmp = path.with_name(f".{path.name}.tmp")
     with open(tmp, "wb") as f:

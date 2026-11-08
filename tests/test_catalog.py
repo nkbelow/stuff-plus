@@ -1,0 +1,55 @@
+import datetime as dt
+
+import duckdb
+import pytest
+from conftest import GAME_DATE, silver_pitch, write_bronze
+
+from stuffplus.catalog import refresh_catalog
+from stuffplus.config import DataConfig, SeasonWindow
+from stuffplus.silver.build import build_season
+
+
+@pytest.fixture
+def cfg(tmp_path):
+    return DataConfig(
+        data_root=tmp_path,
+        seasons={2024: SeasonWindow(start=dt.date(2024, 3, 15), end=dt.date(2024, 10, 6))},
+    )
+
+
+def tables(cfg):
+    with duckdb.connect(str(cfg.catalog_path), read_only=True) as con:
+        return con.execute(
+            "SELECT table_schema || '.' || table_name, table_type FROM information_schema.tables "
+            "ORDER BY 1"
+        ).fetchall()
+
+
+def test_catalog_names_silver_and_bronze_as_views_only(cfg):
+    write_bronze(cfg.bronze_dir, GAME_DATE, [silver_pitch(1), silver_pitch(2)])
+    build_season(cfg, 2024)
+
+    assert refresh_catalog(cfg) == [
+        "bronze.manifest",
+        "bronze.statcast",
+        "silver.dq_results",
+        "silver.pitches",
+    ]
+    assert {kind for _, kind in tables(cfg)} == {"VIEW"}
+    with duckdb.connect(str(cfg.catalog_path), read_only=True) as con:
+        assert con.execute("SELECT count(*) FROM silver.pitches").fetchall() == [(2,)]
+        assert con.execute("SELECT season FROM silver.pitches LIMIT 1").fetchall() == [(2024,)]
+
+
+def test_layers_without_files_get_no_view(cfg):
+    write_bronze(cfg.bronze_dir, GAME_DATE, [silver_pitch(1)])
+    assert refresh_catalog(cfg) == ["bronze.manifest", "bronze.statcast"]
+
+
+def test_catalog_can_be_deleted_and_rebuilt(cfg):
+    write_bronze(cfg.bronze_dir, GAME_DATE, [silver_pitch(1)])
+    build_season(cfg, 2024)
+    refresh_catalog(cfg)
+    cfg.catalog_path.unlink()
+    refresh_catalog(cfg)
+    assert len(tables(cfg)) == 4

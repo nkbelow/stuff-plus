@@ -43,6 +43,10 @@ each commit references its ticket (`Closes #N`), which is how `/code-review` fin
 - From 2026, `plate_x/z` are measured mid-plate (front of plate before), and `sz_top/bot`
   are ABS-defined. Location is not comparable across 2025→2026.
 - DuckDB 2.x relations have no `fetchone()`; use `fetchall()`.
+- All 1,030 bronze partitions share one 119-column header (verified 2022–2026). Reading every
+  bronze file with `union_by_name = true` exhausted 12.7 GB of memory at bind time; use it only
+  per season.
+- DuckDB needs `pytz` to return `TIMESTAMPTZ` values (e.g. `bronze_fetched_at`) to Python.
 - pybaseball lives in the optional `crosscheck` group: `uv run --group crosscheck python ...`.
 - `STUFFPLUS_DATA_ROOT` overrides `data_root` in `configs/data.yaml`.
 

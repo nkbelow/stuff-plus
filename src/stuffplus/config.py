@@ -41,6 +41,14 @@ class DataConfig(BaseModel):
     def bronze_dir(self) -> Path:
         return self.data_root / "bronze" / "statcast"
 
+    @property
+    def silver_dir(self) -> Path:
+        return self.data_root / "silver"
+
+    @property
+    def catalog_path(self) -> Path:
+        return self.data_root / "stuff.duckdb"
+
     def season_dates(self, season: int) -> list[dt.date]:
         if season not in self.seasons:
             raise KeyError(f"season {season} not configured; known: {sorted(self.seasons)}")
