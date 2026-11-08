@@ -33,7 +33,7 @@ outcome classes) waits for gold.
 
 - **Storage:** `data/silver/pitches/season=YYYY/part.parquet`, one file per season (~750k rows). A season is the rebuild unit: DuckDB rebuilds one in seconds, so there's no need for 186 small daily files.
 - **Key:** `pitch_id = game_pk || '-' || at_bat_number || '-' || pitch_number` (VARCHAR), unique across the season. Dedup runs across the **whole season**, not per day: a suspended game resumed on a later date can put one `game_pk` in two daily partitions.
-- **Columns:** every non-deprecated Savant column (~112), with **Savant's names and units unchanged** (`pfx_x` stays in feet). Units are recorded in the schema registry, not converted. Conversions and unit-suffixed names happen in gold (standards §1.7–1.8).
+- **Columns:** every non-deprecated Savant column (~112), with **Savant's names and units unchanged** (`pfx_x` stays in feet; [ADR 0006](../adr/0006-silver-keeps-savant-names-units-and-columns.md)). Units are recorded in the schema registry, not converted. Conversions and unit-suffixed names happen in gold (standards §1.7–1.8).
 - **Lineage:** `bronze_fetched_at` (joined from `_meta.json`), so every silver row traces back to the download it came from.
 - **No filters except an assertion:** `game_type = 'R'` is asserted, not filtered (bronze is already regular-season only, so a violation means something upstream broke). Automatic calls, position-player pitches and rows missing tracking all stay; filtering is gold's job.
 - **Sort order:** `game_date, game_pk, at_bat_number, pitch_number`, so Parquet output is deterministic (standards §3.2).
@@ -121,7 +121,7 @@ tests/test_silver_build.py, test_silver_quality.py, test_catalog.py
 | 2 | Build SQL + staging + atomic publish | Builds 2024 April; output deterministic (same bytes on rebuild); test: a failing audit leaves the previous season untouched | 2 h |
 | 3 | Hard and warn checks + report tables | Each check has a fixture test that passes clean data and catches a seeded violation | 2 h |
 | 4 | Catalog DB + CLI commands | `SELECT count(*) FROM silver.pitches` works from a fresh `stuff catalog refresh` | 0.75 h |
-| 5 | Build all seasons; read the DQ report | All seasons publish; outage games and new descriptions reviewed; findings added to CLAUDE.md gotchas and the plan progress log | 1 h |
+| 5 | Build all seasons; read the DQ report | All seasons publish; outage games and new descriptions reviewed; findings added to CLAUDE.md gotchas and to the closing comment on this issue | 1 h |
 | 6 | `/code-review` against this note, then commit | Review findings resolved or explicitly deferred | 0.5 h |
 
 **Total ≈ 8 h.** Next after silver: the EDA notebook (walkthrough §3).
