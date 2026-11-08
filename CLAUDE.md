@@ -7,14 +7,15 @@ data-engineering terms with a baseball example alongside the code.
 
 ## Where things live
 
-- **Plan, decisions, progress log:** `~/notes/stuff-plus/` (`plan.md`, `decisions.md`,
-  `walkthrough.md`). When starting or scoping a milestone, read `plan.md`'s progress log
-  and `decisions.md`. When a milestone task finishes, append a dated line to the progress
-  log.
+- **Design and roadmap:** `docs/plan.md`. Step-by-step learning explainer:
+  `docs/walkthrough.md`. When starting or scoping a milestone, read its open GitHub Issues
+  and `docs/adr/`.
+- **Progress:** GitHub Issues. When a task finishes, close its issue with a comment that
+  records the results (key numbers, surprises, follow-ups).
 - **Coding standards:** `CODING_STANDARDS.md`. Read it before writing or reviewing code.
   It is the single source for the leakage rules and forbidden feature columns.
-- **Spec for `/code-review`:** the milestone's spec note in `~/notes/stuff-plus/`
-  (`silver-plan.md` for silver); otherwise its section of `plan.md`.
+- **Spec for `/code-review`:** `docs/specs/<milestone>.md` (silver: `docs/specs/silver.md`);
+  otherwise the milestone's section of `docs/plan.md`.
 - **Commands:** `uv run stuff --help`.
 
 ## Guardrails
@@ -37,3 +38,17 @@ data-engineering terms with a baseball example alongside the code.
 - DuckDB 2.x relations have no `fetchone()`; use `fetchall()`.
 - pybaseball lives in the optional `crosscheck` group: `uv run --group crosscheck python ...`.
 - `STUFFPLUS_DATA_ROOT` overrides `data_root` in `configs/data.yaml`.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on nkbelow/stuff-plus, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical names, unchanged. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
