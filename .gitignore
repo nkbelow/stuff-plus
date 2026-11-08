@@ -1,3 +1,6 @@
+# Secrets
+.env
+
 # Runtime data (regenerated from sources)
 data/
 mlruns/

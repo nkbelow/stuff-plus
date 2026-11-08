@@ -1,61 +1,39 @@
-# Stuff+ model
+# stuff-plus
 
-Learning project: a custom Stuff+-style pitch quality model (four-seam fastballs first)
-from pitch-level Statcast data and LightGBM. Learning applied ML is the goal, so explain
-ML concepts in data-engineering terms with baseball examples while working.
+A custom Stuff+-style pitch quality model (four-seam fastballs first) built from Statcast
+data with LightGBM. Nick's goal is learning applied ML, so work as a **mentor**: when a new
+ML concept enters the work (a loss function, leakage, early stopping, SHAP), explain it in
+data-engineering terms with a baseball example alongside the code.
 
-**Plan and decisions live in the Obsidian vault**, not here:
-`~/notes/stuff-plus/plan.md`, `decisions.md`, `walkthrough.md`. Read them before
-starting a new milestone.
+## Where things live
 
-## Fixed decisions (see decisions.md)
+- **Plan, decisions, progress log:** `~/notes/stuff-plus/` (`plan.md`, `decisions.md`,
+  `walkthrough.md`). When starting or scoping a milestone, read `plan.md`'s progress log
+  and `decisions.md`. When a milestone task finishes, append a dated line to the progress
+  log.
+- **Coding standards:** `CODING_STANDARDS.md`. Read it before writing or reviewing code.
+  It is the single source for the leakage rules and forbidden feature columns.
+- **Spec for `/code-review`:** the milestone's spec note in `~/notes/stuff-plus/`
+  (`silver-plan.md` for silver); otherwise its section of `plan.md`.
+- **Commands:** `uv run stuff --help`.
 
-- Seasons: 2022–23 train, 2024 tune/early-stop, 2025 dev "next season" outcomes,
-  **2026 locked final test: never compute model metrics on it during development.**
-- v1 target: denoised, count-neutral xRV regression. v2: decomposed classification.
-- Own Savant fetcher with raw bytes preserved; pybaseball is only a cross-check.
-- Features: physical only. No location, count, batter, park, or pitcher ID.
-  Outcome/future columns (`description`, `events`, `delta_*`, `post_*`, `launch_*`,
-  `estimated_*`, bat tracking, `*_days_until_next_game`) are forbidden as features.
+## Guardrails
 
-## Layout
+- **2026 is locked.** Evaluate on 2024 (pitch level) and 2024 scores → 2025 outcomes
+  (pitcher level). 2026 metrics come only from the final experiment config, run once.
+- **Savant is a free public service, and each request takes ~5 s.** Agree backfills
+  longer than a month with Nick before running them.
+- **Done** means `uv run pytest` and `uv run ruff check .` pass.
 
-```
-configs/data.yaml           data_root (env override STUFFPLUS_DATA_ROOT), season windows, Savant settings
-src/stuffplus/
-  config.py                 pydantic config models
-  cli.py                    `stuff` typer app
-  ingest/savant.py          single-date fetch: URL, retries, rate limit, CSV validation
-  ingest/bronze.py          partition writes, backfill loop, manifest view
-tests/                      pytest; HTTP mocked with httpx.MockTransport (no network)
-data/                       gitignored: bronze/ silver/ gold/
-```
+## Gotchas (verified 2026-11-07)
 
-Bronze: `data/bronze/statcast/season=YYYY/game_date=YYYY-MM-DD/{part.csv.gz,_meta.json}`.
-`_meta.json` is written last and marks the partition complete.
-
-## Commands
-
-- `uv run stuff ingest backfill --season 2024` (or `--start/--end`; `--force` re-fetches)
-- `uv run stuff ingest status`: per-season dates/pitches/duplicates/schema count
-- `uv run pytest`, `uv run ruff check .`, `uv run ruff format .`
-- Cross-check against pybaseball (optional heavy group, not installed by default):
-  `uv run --group crosscheck python ...`
-- `STUFFPLUS_DATA_ROOT=/path` overrides `data_root` in `configs/data.yaml`.
-
-## Statcast gotchas (verified 2026-11-07)
-
-- Response body starts with a UTF-8 BOM; read with `utf-8-sig` (DuckDB handles it).
-- 119 columns. Spin is `release_spin_rate` (CSV docs say `release_spin`).
-- `pfx_x`/`pfx_z` are **feet**, catcher's perspective; RHP four-seamers have negative `pfx_x`.
-- Off-days return a header-only CSV with HTTP 200.
-- 2026: `plate_x/z` measured mid-plate (was front), `sz_top/bot` ABS-defined.
-- Savant occasionally returns non-CSV bodies with HTTP 200; the fetcher retries those.
+- Savant CSVs start with a UTF-8 BOM (DuckDB handles it; Python needs `utf-8-sig`).
+  They have 119 columns, and spin is `release_spin_rate` (the CSV docs say `release_spin`).
+- `pfx_x`/`pfx_z` are **feet**, catcher's perspective: RHP four-seamers have negative `pfx_x`.
+- Off-days return a header-only CSV with HTTP 200. Savant sometimes returns a non-CSV
+  body with HTTP 200; the fetcher retries it.
+- From 2026, `plate_x/z` are measured mid-plate (front of plate before), and `sz_top/bot`
+  are ABS-defined. Location is not comparable across 2025→2026.
 - DuckDB 2.x relations have no `fetchone()`; use `fetchall()`.
-
-## Conventions
-
-- Bronze is immutable raw data; transforms never mutate it.
-- Silver = cleaned facts only (no feature logic). Gold = labels/features/datasets.
-- Value tables used for labels are fit on training seasons only.
-- Keep infra local and simple: no Airflow, Docker, or cloud until there's a real need.
+- pybaseball lives in the optional `crosscheck` group: `uv run --group crosscheck python ...`.
+- `STUFFPLUS_DATA_ROOT` overrides `data_root` in `configs/data.yaml`.
