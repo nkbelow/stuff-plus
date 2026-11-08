@@ -1,6 +1,6 @@
 # Stuff+ Model — Technical Design & Implementation Plan
 
-Living design doc for the project. Work and progress are tracked in [GitHub Issues](https://github.com/nkbelow/stuff-plus/issues); decisions in [`adr/`](adr/); the silver-layer spec in [`specs/silver.md`](specs/silver.md); a step-by-step explainer in [`walkthrough.md`](walkthrough.md). `~/fantasy_baseball` consumes the scores later.
+Living design doc for the project. Work and progress are tracked in [GitHub Issues](https://github.com/nkbelow/stuff-plus/issues); decisions in [`adr/`](adr/); the silver-layer spec in [`specs/silver.md`](specs/silver.md); a step-by-step explainer in [`walkthrough.md`](walkthrough.md); what Savant's columns mean in [`data-guide.md`](data-guide.md). `~/fantasy_baseball` consumes the scores later.
 
 ---
 

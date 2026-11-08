@@ -12,6 +12,7 @@ data-engineering terms with a baseball example alongside the code.
   and `docs/adr/`.
 - **Progress:** GitHub Issues. When a task finishes, close its issue with a comment that
   records the results (key numbers, surprises, follow-ups).
+- **What a Statcast column means** (baseball terms, real examples): `docs/data-guide.md`.
 - **Coding standards:** `CODING_STANDARDS.md`. Read it before writing or reviewing code.
   It is the single source for the leakage rules and forbidden feature columns.
 - **Spec for `/code-review`:** the milestone's parent GitHub issue. Silver predates this:
