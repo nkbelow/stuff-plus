@@ -228,7 +228,7 @@ Partitioning by date already supports a daily incremental job (`ingest --date ye
 
 ```
 stuff-plus/
-├── pyproject.toml            # uv, python>=3.12, console script `stuff`
+├── pyproject.toml            # uv, python>=3.14, console script `stuff`
 ├── uv.lock
 ├── README.md                 # metric definition + "not FanGraphs Stuff+" disclaimer
 ├── CLAUDE.md

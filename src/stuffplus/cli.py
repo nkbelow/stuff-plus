@@ -5,8 +5,6 @@ uv run stuff ingest backfill --start 2024-04-01 --end 2024-04-30
 uv run stuff ingest status
 """
 
-from __future__ import annotations
-
 import datetime as dt
 from pathlib import Path
 from typing import Annotated

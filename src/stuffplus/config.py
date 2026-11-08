@@ -1,7 +1,5 @@
 """Typed configuration loaded from YAML files under configs/."""
 
-from __future__ import annotations
-
 import datetime as dt
 import os
 from pathlib import Path

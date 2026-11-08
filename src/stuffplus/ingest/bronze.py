@@ -13,8 +13,6 @@ Re-runs are idempotent: complete partitions are skipped unless `force=True`, and
 gzip is written with mtime=0 so identical responses produce identical files.
 """
 
-from __future__ import annotations
-
 import datetime as dt
 import gzip
 import json

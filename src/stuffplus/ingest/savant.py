@@ -17,8 +17,6 @@ Failure semantics:
     a deterministic mismatch just burns requests.
 """
 
-from __future__ import annotations
-
 import csv
 import datetime as dt
 import hashlib
