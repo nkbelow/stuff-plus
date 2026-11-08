@@ -1,0 +1,22 @@
+# The checks CLAUDE.md defines as "done", on every push and pull request.
+# Tests are offline by design (CODING_STANDARDS.md §5.1): no secrets, no network.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      # Python comes from .python-version; dependencies exactly as locked.
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest
