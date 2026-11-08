@@ -11,6 +11,7 @@ dependencies = [
     "duckdb>=2.0.0,<3",
     "httpx>=0.28.1",
     "pydantic>=2.14.3",
+    "pytz>=2026.6",
     "pyyaml>=6.0.3",
     "typer>=0.28.0",
 ]
@@ -27,8 +28,10 @@ crosscheck = [
     "pybaseball>=2.2.7",
 ]
 dev = [
+    "mypy>=2.4.1",
     "pytest>=9.2.0",
     "ruff>=0.17.4",
+    "types-pyyaml>=6.0.12.20261103",
 ]
 
 [tool.ruff]
@@ -37,3 +40,16 @@ target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+# Tests use pytest fixtures and helper dicts; type-checked, but untyped defs are allowed.
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false

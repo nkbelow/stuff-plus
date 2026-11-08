@@ -11,8 +11,17 @@ The manifest is just a DuckDB view over all `_meta.json` files (see `manifest`).
 
 Re-runs are idempotent: complete partitions are skipped unless `force=True`, and
 gzip is written with mtime=0 so identical responses produce identical files.
+
+Failure semantics:
+
+  - A failed fetch is recorded per date by `backfill`, which carries on (see savant.py
+    for which failures retry).
+  - Writes are atomic; a crash leaves the date incomplete, to be fetched again.
+  - `read_header` raises ValueError for a file with no header line, and OSError or
+    EOFError for an unreadable gzip.
 """
 
+import csv
 import datetime as dt
 import gzip
 import json
@@ -20,9 +29,11 @@ import os
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
+from stuffplus.fs import atomic_path, hive_seasons
 from stuffplus.ingest.savant import FETCHER_VERSION, FetchResult, SavantClient, SavantError
 
 DATA_FILE = "part.csv.gz"
@@ -34,22 +45,68 @@ def partition_dir(bronze_dir: Path, game_date: dt.date) -> Path:
 
 
 def is_complete(part_dir: Path) -> bool:
+    return _complete_meta(part_dir) is not None
+
+
+def _complete_meta(part_dir: Path) -> dict[str, Any] | None:
+    """The partition's metadata if it is complete, else None."""
     meta = part_dir / META_FILE
     if not meta.exists() or not (part_dir / DATA_FILE).exists():
-        return False
-    return json.loads(meta.read_text()).get("status") == "ok"
+        return None
+    parsed: dict[str, Any] = json.loads(meta.read_text())
+    return parsed if parsed.get("status") == "ok" else None
+
+
+@dataclass(frozen=True)
+class Partition:
+    """One complete game-date partition, as downstream layers see it."""
+
+    game_date: dt.date
+    data_file: Path
+    rows: int
+    fetched_at: dt.datetime
+
+
+def complete_partitions(bronze_dir: Path, season: int) -> list[Partition]:
+    """A season's complete partitions in date order. Incomplete ones are skipped."""
+    partitions = []
+    for part_dir in sorted((bronze_dir / f"season={season}").glob("game_date=*")):
+        meta = _complete_meta(part_dir)
+        if meta is None:
+            continue
+        partitions.append(
+            Partition(
+                game_date=dt.date.fromisoformat(meta["game_date"]),
+                data_file=part_dir / DATA_FILE,
+                rows=meta["rows"],
+                fetched_at=dt.datetime.fromisoformat(meta["fetched_at"]),
+            )
+        )
+    return partitions
+
+
+def read_header(data_file: Path) -> tuple[str, ...]:
+    """A bronze file's column names, in order. Savant prefixes a UTF-8 BOM."""
+    with gzip.open(data_file, "rt", encoding="utf-8-sig", newline="") as f:
+        header = tuple(next(csv.reader(f), []))
+    if not header:
+        raise ValueError(f"{data_file}: no header line")
+    return header
+
+
+def seasons(bronze_dir: Path) -> list[int]:
+    """Seasons with at least one bronze partition directory."""
+    return hive_seasons(bronze_dir)
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
-    tmp = path.with_name(f".{path.name}.tmp")
-    with open(tmp, "wb") as f:
+    with atomic_path(path) as tmp, open(tmp, "wb") as f:
         f.write(data)
         f.flush()
         os.fsync(f.fileno())
-    os.replace(tmp, path)
 
 
-def write_partition(bronze_dir: Path, result: FetchResult) -> dict:
+def write_partition(bronze_dir: Path, result: FetchResult) -> dict[str, Any]:
     """Persist one fetch. Returns the metadata written."""
     part_dir = partition_dir(bronze_dir, result.game_date)
     part_dir.mkdir(parents=True, exist_ok=True)

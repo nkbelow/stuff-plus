@@ -3,10 +3,11 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
-from conftest import GAME_DATE, HEADER, pitch, savant_csv
 
+from stuffplus.config import SavantConfig
 from stuffplus.ingest import savant
 from stuffplus.ingest.savant import SavantError, SavantTransientError, build_url, validate_csv
+from tests.conftest import GAME_DATE, HEADER, pitch, savant_csv
 
 
 def test_build_url_requests_single_regular_season_date():
@@ -127,7 +128,7 @@ def test_throttle_spaces_requests():
         transport=httpx.MockTransport(lambda r: httpx.Response(200, content=savant_csv([])))
     )
     client = savant.SavantClient(
-        savant.SavantConfig(min_interval_s=1.0),
+        SavantConfig(min_interval_s=1.0),
         http=http,
         sleep=sleeps.append,
         clock=lambda: next(times),

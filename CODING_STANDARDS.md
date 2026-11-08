@@ -18,8 +18,8 @@ information about the outcome, or about the future, reaching training or evaluat
    umpire, catcher) and identity (`pitcher`, `player_name`, team) stay out.
 2. **Outcome and future columns are never features:** `description`, `type`, `events`,
    `des`, `bb_type`, `launch_*`, `hit_*`, `hc_*`, `estimated_*`, `woba_*`, `babip_value`,
-   `iso_value`, `delta_*`, `post_*`, `*_win_exp`, bat tracking (`bat_speed`,
-   `swing_length`, `attack_*`, `swing_path_tilt`, `intercept_*`), and
+   `iso_value`, `hyper_speed`, `delta_*`, `post_*`, `*_win_exp`, bat tracking (`bat_speed`,
+   `swing_length`, `miss_distance`, `attack_*`, `swing_path_tilt`, `intercept_*`), and
    `*_days_until_next_game`. This list is the single source of truth; the allow-list
    test enforces it.
 3. **Fit on training seasons only.** Anything learned from data (label value tables,
@@ -37,7 +37,7 @@ information about the outcome, or about the future, reaching training or evaluat
    gold function. Mirrored columns carry an `_arm` marker (`hb_arm_in`); raw columns keep
    Savant's names.
 8. **Savant columns keep Savant's names and units through silver**; units are recorded in
-   the silver schema registry. Columns derived in gold carry their unit in the name:
+   the silver schema contract. Columns derived in gold carry their unit in the name:
    `_in`, `_ft`, `_mph`, `_rpm`, `_deg` (`pfx_x` is feet; `hb_arm_in` is inches).
 9. **Labels are never imputed.** Rows missing a core physical feature are dropped and
    counted in a data quality report.
@@ -97,8 +97,9 @@ information about the outcome, or about the future, reaching training or evaluat
 
 ## 6. Code beyond ruff
 
-1. Type hints on every public function signature. (Python 3.14 evaluates annotations lazily,
-   so `from __future__ import annotations` isn't needed.)
+1. Type hints on every function in `src/`, enforced by `mypy --strict` (see `pyproject.toml`).
+   Python 3.14 evaluates annotations lazily, so `from __future__ import annotations` isn't
+   needed.
 2. Modules that do I/O open with a docstring stating their purpose and failure semantics.
 3. Comments explain *why*: the baseball, Savant, or statistical reason. The code
    already says *what*.

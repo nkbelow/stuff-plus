@@ -1,10 +1,13 @@
 import datetime as dt
+from pathlib import Path
 
 import httpx
 import pytest
 
-from stuffplus.config import SavantConfig
-from stuffplus.ingest.savant import SavantClient
+from stuffplus.config import DataConfig, SavantConfig, SeasonWindow
+from stuffplus.ingest.bronze import write_partition
+from stuffplus.ingest.savant import FetchResult, SavantClient, validate_csv
+from stuffplus.silver.contract import DEPRECATED_COLUMNS, SOURCE_COLUMNS
 
 HEADER = [
     "pitch_type",
@@ -72,3 +75,80 @@ def make_client():
         return client, responder
 
     return _make
+
+
+# Savant's full header: every contract column plus the deprecated, always-empty ones.
+SILVER_FIXTURE_HEADER = [c.name for c in SOURCE_COLUMNS] + list(DEPRECATED_COLUMNS)
+
+# A valid value of each contract type, for columns a test doesn't care about.
+_FILLER = {"VARCHAR": "x", "INTEGER": "1", "BIGINT": "100", "DOUBLE": "1.5"}
+
+
+def silver_pitch(n: int, game_date: dt.date = GAME_DATE, **overrides: str) -> dict[str, str]:
+    """One bronze row: a called strike with every contract column populated."""
+    row = {c.name: _FILLER.get(c.type, "") for c in SOURCE_COLUMNS}
+    row |= {c: "" for c in DEPRECATED_COLUMNS}
+    row |= {
+        "game_pk": "745000",
+        "at_bat_number": "1",
+        "pitch_number": str(n),
+        "pitcher": "543037",
+        "batter": "592450",
+        "game_date": game_date.isoformat(),
+        "game_type": "R",
+        "home_team": "NYY",
+        "away_team": "TOR",
+        "p_throws": "R",
+        "stand": "L",
+        "balls": "0",
+        "strikes": "1",
+        "pitch_type": "FF",
+        "description": "called_strike",
+        "type": "S",
+        "events": "strikeout",
+        "release_speed": "95.1",
+        "release_spin_rate": "2300",
+        "spin_axis": "210",
+        "pfx_x": "-0.55",
+        "pfx_z": "1.30",
+        "release_pos_x": "-1.9",
+        "release_pos_z": "5.8",
+        "release_extension": "6.5",
+        "arm_angle": "44.6",
+    }
+    row.update(overrides)
+    return row
+
+
+def write_bronze(
+    bronze_dir: Path,
+    game_date: dt.date,
+    rows: list[dict[str, str]],
+    fetched_at: dt.datetime = dt.datetime(2026, 11, 7, 12, 0, tzinfo=dt.UTC),
+    header: list[str] = SILVER_FIXTURE_HEADER,
+) -> None:
+    """Write one complete bronze partition through the real bronze writer."""
+    body = savant_csv(rows, header=header)
+    n_rows, columns, dupes = validate_csv(body, game_date)
+    write_partition(
+        bronze_dir,
+        FetchResult(
+            game_date=game_date,
+            url="https://example.test",
+            http_status=200,
+            fetched_at=fetched_at,
+            body=body,
+            rows=n_rows,
+            columns=columns,
+            duplicate_keys=dupes,
+        ),
+    )
+
+
+@pytest.fixture
+def cfg(tmp_path: Path) -> DataConfig:
+    """A data config rooted in a temp dir, for tests that build layers on disk."""
+    return DataConfig(
+        data_root=tmp_path,
+        seasons={2024: SeasonWindow(start=dt.date(2024, 3, 15), end=dt.date(2024, 10, 6))},
+    )

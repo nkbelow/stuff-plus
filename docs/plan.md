@@ -1,6 +1,6 @@
 # Stuff+ Model — Technical Design & Implementation Plan
 
-Living design doc for the project. Work and progress are tracked in [GitHub Issues](https://github.com/nkbelow/stuff-plus/issues); decisions in [`adr/`](adr/); the silver-layer spec in [`specs/silver.md`](specs/silver.md); a step-by-step explainer in [`walkthrough.md`](walkthrough.md). `~/fantasy_baseball` consumes the scores later.
+Living design doc for the project. Work and progress are tracked in [GitHub Issues](https://github.com/nkbelow/stuff-plus/issues); decisions in [`adr/`](adr/); the silver-layer spec in [`specs/silver.md`](specs/silver.md); a step-by-step explainer in [`walkthrough.md`](walkthrough.md); what Savant's columns mean in [`data-guide.md`](data-guide.md). `~/fantasy_baseball` consumes the scores later.
 
 ---
 
@@ -206,8 +206,8 @@ If LightGBM can't beat ridge meaningfully, that's a finding, not a bug.
 
 ### Silver — cleaned pitch facts (DuckDB SQL over bronze)
 - Detailed design: [`specs/silver.md`](specs/silver.md) (supersedes this section's details).
-- Typed columns via an explicit schema registry; `game_type = 'R'` asserted; key **`pitch_id = game_pk-at_bat_number-pitch_number`**, unique per season.
-- Savant names and units kept unchanged (units recorded in the registry); conversions move to gold.
+- Typed columns via an explicit schema contract; `game_type = 'R'` asserted; key **`pitch_id = game_pk-at_bat_number-pitch_number`**, unique per season.
+- Savant names and units kept unchanged (units recorded in the schema contract); conversions move to gold.
 - **No feature logic here**, so no mirroring. Silver is "the facts, cleaned".
 - DQ checks producing a per-season/month report table: null rates per core column, ranges (velo 55–106, spin 500–3800, extension 4–8.5), pitches per game (~250–350), pitch_type vocabulary, and a pitch_id uniqueness check. Warnings vs hard failures are configurable.
 - **Tests:** tiny hand-written CSV fixtures → expected silver rows; dedup; type coercion; the DQ rules themselves.

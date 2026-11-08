@@ -24,3 +24,15 @@ savant:
   # this just keeps us polite if responses come back from cache.
   min_interval_s: 1.0
   user_agent: stuff-plus/0.1 (personal research project)
+
+# Silver data quality warn checks: reported in silver.dq_results, never block a publish.
+quality:
+  spin_outage_coverage: 0.5  # share of pitches thrown with spin, per game
+  pitches_per_game: {min: 150, max: 450}
+  ranges:  # silver units: Savant's, unchanged (mph, rpm, ft)
+    release_speed: {min: 30, max: 106}
+    release_spin_rate: {min: 0, max: 4000}
+    release_extension: {min: 3, max: 9}
+    release_pos_z: {min: 0, max: 8}
+    pfx_x: {min: -3, max: 3}
+    pfx_z: {min: -3, max: 3}
