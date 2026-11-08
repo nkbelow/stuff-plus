@@ -37,7 +37,7 @@ information about the outcome, or about the future, reaching training or evaluat
    gold function. Mirrored columns carry an `_arm` marker (`hb_arm_in`); raw columns keep
    Savant's names.
 8. **Savant columns keep Savant's names and units through silver**; units are recorded in
-   the silver schema registry. Columns derived in gold carry their unit in the name:
+   the silver schema contract. Columns derived in gold carry their unit in the name:
    `_in`, `_ft`, `_mph`, `_rpm`, `_deg` (`pfx_x` is feet; `hb_arm_in` is inches).
 9. **Labels are never imputed.** Rows missing a core physical feature are dropped and
    counted in a data quality report.

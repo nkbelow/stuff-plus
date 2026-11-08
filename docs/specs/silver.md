@@ -33,14 +33,14 @@ outcome classes) waits for gold.
 
 - **Storage:** `data/silver/pitches/season=YYYY/part.parquet`, one file per season (~750k rows). A season is the rebuild unit: DuckDB rebuilds one in seconds, so there's no need for 186 small daily files.
 - **Key:** `pitch_id = game_pk || '-' || at_bat_number || '-' || pitch_number` (VARCHAR), unique across the season. Dedup runs across the **whole season**, not per day: a suspended game resumed on a later date can put one `game_pk` in two daily partitions.
-- **Columns:** every non-deprecated Savant column (~112), with **Savant's names and units unchanged** (`pfx_x` stays in feet; [ADR 0006](../adr/0006-silver-keeps-savant-names-units-and-columns.md)). Units are recorded in the schema registry, not converted. Conversions and unit-suffixed names happen in gold (standards §1.7–1.8).
+- **Columns:** every non-deprecated Savant column (~112), with **Savant's names and units unchanged** (`pfx_x` stays in feet; [ADR 0006](../adr/0006-silver-keeps-savant-names-units-and-columns.md)). Units are recorded in the schema contract, not converted. Conversions and unit-suffixed names happen in gold (standards §1.7–1.8).
 - **Lineage:** `bronze_fetched_at` (joined from `_meta.json`), so every silver row traces back to the download it came from.
 - **No filters except an assertion:** `game_type = 'R'` is asserted, not filtered (bronze is already regular-season only, so a violation means something upstream broke). Automatic calls, position-player pitches and rows missing tracking all stay; filtering is gold's job.
 - **Sort order:** `game_date, game_pk, at_bat_number, pitch_number`, so Parquet output is deterministic (standards §3.2).
 
-### Schema registry: `src/stuffplus/silver/schema.py`
+### Schema contract: `src/stuffplus/silver/contract.py`
 
-The single source of truth for silver columns. Each entry holds name, DuckDB type, unit, group (`id`, `context`, `physics`, `location`, `outcome`, `savant_model`, `bat_tracking`), and the first season it is expected to be populated (Savant sends all 119 columns every season; seasons before a column existed send it empty, e.g. bat tracking in 2022). The build generates its `SELECT` cast list from the registry, so the column list isn't written twice. Gold's forbidden-column test can later reuse the groups.
+The single source of truth for silver columns. Each entry holds name, DuckDB type, unit, group (`id`, `context`, `physics`, `location`, `outcome`, `savant_model`, `bat_tracking`), and the first season it is expected to be populated (Savant sends all 119 columns every season; seasons before a column existed send it empty, e.g. bat tracking in 2022). The build generates its `SELECT` cast list from the contract, so the column list isn't written twice. Gold's forbidden-column test can later reuse the groups.
 
 - Measurements → `DOUBLE`, even ones that look like integers today (spin, axis, angles).
 - IDs and counts → `BIGINT` / `INTEGER`; codes → `VARCHAR`; `game_date` → `DATE`.
@@ -65,7 +65,7 @@ Each check is a SQL query returning violations, plus a severity.
 - Every row has `game_type = 'R'`, and `game_date` matches its bronze partition.
 - Identifiers not null: `game_pk`, `at_bat_number`, `pitch_number`, `pitcher`, `batter`, `game_date`.
 - `description` is in the known vocabulary (the 15 values seen). A new value fails, because gold's outcome-class mapping must be updated deliberately.
-- **Schema contract:** each bronze file's header matches the registry. A missing expected column fails; a new, unknown column warns and is listed.
+- **Schema contract:** each bronze file's header matches the schema contract. A missing expected column fails; a new, unknown column warns and is listed.
 - Deprecated columns are entirely null before they're dropped.
 - Row count: silver = bronze − exact duplicates.
 
@@ -104,7 +104,7 @@ uv run stuff catalog refresh
 ```
 src/stuffplus/silver/
   __init__.py
-  schema.py      column registry (single source of truth)
+  contract.py    schema contract: one entry per silver column (single source of truth)
   build.py       build_season(): bronze → staged parquet → audit → publish
   quality.py     check definitions + report writers
   sql/pitches.sql  select/dedup template; cast list generated from schema.py
@@ -126,12 +126,12 @@ Tracked as sub-issues of [#1](https://github.com/nkbelow/stuff-plus/issues/1), c
 ## ML concepts this milestone teaches
 
 - **Schema-on-read vs schema-on-write:** bronze is read with no schema; silver commits to one. Why "let the library guess types" is a reproducibility bug.
-- **Data contracts:** the registry plus hard checks are a contract between Savant and every downstream model.
+- **Data contracts:** the schema contract plus hard checks are the agreement between Savant and every downstream model (the same idea as dbt model contracts or Delta schema enforcement).
 - **Missingness mechanisms:** spin missing for *whole games at specific parks* is not random noise. Dropping those rows later removes certain park-days, which matters if park correlates with outcomes (Coors). EDA will check whether the outages cluster.
 - **Write–audit–publish:** why validation sits between writing and publishing, not after.
 
 ## Risks and unknowns
 
-- Columns that only became populated in later seasons (bat tracking; possibly others in 2023, 2025, 2026). The registry records the first expected season, and a warn check flags a column that is empty when it should be populated. Confirmed on [#3](https://github.com/nkbelow/stuff-plus/issues/3) for 2022 and 2024.
+- Columns that only became populated in later seasons (bat tracking; possibly others in 2023, 2025, 2026). The schema contract records the first expected season, and a warn check flags a column that is empty when it should be populated. Confirmed on [#3](https://github.com/nkbelow/stuff-plus/issues/3) for 2022 and 2024.
 - Savant may reclassify pitch types between our download and a later re-download. `bronze_fetched_at` lineage makes that diagnosable.
 - Full-season files are ~100–150 MB of Parquet each (estimate). Fine locally; worth confirming.
