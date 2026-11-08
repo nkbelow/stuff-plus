@@ -15,7 +15,7 @@ import typer
 
 from stuffplus.config import DEFAULT_DATA_CONFIG, date_range, load_data_config
 from stuffplus.ingest.bronze import backfill as run_backfill
-from stuffplus.ingest.bronze import manifest
+from stuffplus.ingest.bronze import season_summary
 from stuffplus.ingest.savant import SavantClient
 
 app = typer.Typer(no_args_is_help=True)
@@ -71,21 +71,8 @@ def backfill(
 def status(config: ConfigOpt = DEFAULT_DATA_CONFIG) -> None:
     """Per-season summary of what's in bronze, including schema drift."""
     cfg = load_data_config(config)
-    rel = manifest(cfg.bronze_dir)
-    if rel is None:
+    summary = season_summary(cfg.bronze_dir)
+    if summary is None:
         typer.echo(f"No bronze partitions under {cfg.bronze_dir}")
         return
-    rel.query(
-        "m",
-        """
-        SELECT season,
-               count(*)                          AS dates,
-               count(*) FILTER (WHERE rows > 0)  AS game_days,
-               sum(rows)                         AS pitches,
-               sum(duplicate_keys)               AS duplicate_keys,
-               count(DISTINCT columns_sha256)    AS schemas,
-               min(game_date) FILTER (WHERE rows > 0) AS first_game,
-               max(game_date) FILTER (WHERE rows > 0) AS last_game
-        FROM m GROUP BY season ORDER BY season
-        """,
-    ).show()
+    summary.show()

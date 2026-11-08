@@ -118,3 +118,26 @@ def manifest(bronze_dir: Path) -> duckdb.DuckDBPyRelation | None:
         return None
     pattern = str(bronze_dir / "season=*" / "game_date=*" / META_FILE)
     return duckdb.sql(f"SELECT * FROM read_json_auto('{pattern}')")
+
+
+def season_summary(bronze_dir: Path) -> duckdb.DuckDBPyRelation | None:
+    """Per-season counts from the manifest; `schemas` > 1 means Savant's columns drifted."""
+    rel = manifest(bronze_dir)
+    if rel is None:
+        return None
+    return rel.query(
+        "m",
+        """
+        SELECT season,
+               count(*)                                AS dates,
+               count(*) FILTER (WHERE rows > 0)        AS game_days,
+               sum(rows)                               AS pitches,
+               sum(duplicate_keys)                     AS duplicate_keys,
+               count(DISTINCT columns_sha256)          AS schemas,
+               min(game_date) FILTER (WHERE rows > 0)  AS first_game,
+               max(game_date) FILTER (WHERE rows > 0)  AS last_game
+        FROM m
+        GROUP BY season
+        ORDER BY season
+        """,
+    )
